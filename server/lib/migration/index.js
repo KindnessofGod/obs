@@ -14,7 +14,15 @@ const { parseOpenSong } = require("./lib/opensong");
 const { parseChordPro } = require("./lib/chordpro");
 const { parsePlainText } = require("./lib/plaintext");
 
-const SONGS_DIR = path.join(__dirname, "..", "..", "..", "data", "songs");
+// Default target is the real data/songs directory, as PROTOCOL.md specifies.
+// Overridable via MIGRATION_SONGS_DIR so the fixtures self-test (and any other
+// tooling) can exercise importSongsFromDir without writing into the app's real
+// song library - importSongsFromDir's public signature/behavior is unaffected.
+function songsDir() {
+  return process.env.MIGRATION_SONGS_DIR
+    ? path.resolve(process.env.MIGRATION_SONGS_DIR)
+    : path.join(__dirname, "..", "..", "..", "data", "songs");
+}
 
 // Directive names recognized as ChordPro section/metadata directives (used for
 // content sniffing in detectFormat). Kept in sync with lib/chordpro.js's directive
@@ -146,6 +154,7 @@ async function importSongsFromDir(dirPath) {
     .map((entry) => entry.name)
     .sort();
 
+  const SONGS_DIR = songsDir();
   if (!fs.existsSync(SONGS_DIR)) {
     fs.mkdirSync(SONGS_DIR, { recursive: true });
   }

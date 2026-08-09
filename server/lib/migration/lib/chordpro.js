@@ -55,10 +55,15 @@ function parseChordPro(fileContents) {
   const sectionCounts = {};
   let current = null; // { label, lines, explicit }
 
+  // Verses are always numbered ("Verse 1", "Verse 2", ...) to match how OpenSong/
+  // plain-text songs are labelled. Other section kinds (chorus, bridge, tab) only
+  // gain a number from their second occurrence onward, e.g. "Chorus", "Chorus 2".
   const labelFor = (kind) => {
     sectionCounts[kind] = (sectionCounts[kind] || 0) + 1;
     const word = labelWord(kind);
-    return sectionCounts[kind] === 1 ? word : `${word} ${sectionCounts[kind]}`;
+    const n = sectionCounts[kind];
+    if (kind === "verse") return `${word} ${n}`;
+    return n === 1 ? word : `${word} ${n}`;
   };
 
   const flush = () => {

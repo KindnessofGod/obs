@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<song>
+  <author>Unknown</author>
+  <lyrics>[V1]
+This song is missing its title tag on purpose, to test error handling.
+</lyrics>
+</song>
