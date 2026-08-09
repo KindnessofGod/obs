@@ -200,20 +200,31 @@ function searchByReference(reference, translations) {
   return results;
 }
 
+// Escapes a string for safe interpolation into a RegExp.
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function searchByKeyword(query, translations) {
   const phrase = query.toLowerCase();
   const tokens = phrase.split(/\s+/).filter(Boolean);
   const MAX_RESULTS = 25;
 
+  // Word-boundary matching, not plain substring - otherwise a token like
+  // "so" matches inside "Solomon" and "loved" matches inside "beloved",
+  // flooding results with verses that don't actually contain the word.
+  const phraseRe = new RegExp(`\\b${escapeRegExp(phrase)}\\b`);
+  const tokenRes = tokens.map((tok) => new RegExp(`\\b${escapeRegExp(tok)}\\b`));
+
   const scored = [];
   for (const t of translations) {
     for (const entry of t.verseIndex) {
       let rank;
-      if (entry.lower.includes(phrase)) {
+      if (phraseRe.test(entry.lower)) {
         rank = 0; // exact phrase match
-      } else if (tokens.every((tok) => entry.lower.includes(tok))) {
+      } else if (tokenRes.every((re) => re.test(entry.lower))) {
         rank = 1; // all keywords present
-      } else if (tokens.some((tok) => entry.lower.includes(tok))) {
+      } else if (tokenRes.some((re) => re.test(entry.lower))) {
         rank = 2; // some keywords present
       } else {
         continue;

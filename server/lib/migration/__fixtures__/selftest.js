@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Lightweight self-test for server/lib/migration, run directly with plain node
 // (no test framework). Exercises detectFormat/parseSong on each fixture format,
-// and importSongsFromDir end to end against this __fixtures__ directory.
+// and importSongsFromDir end to end against the __fixtures__/songs directory.
 //
 // Usage: node server/lib/migration/__fixtures__/selftest.js
 
@@ -34,7 +34,7 @@ function check(description, condition) {
 }
 
 function readFixture(name) {
-  return fs.readFileSync(path.join(FIXTURES_DIR, name), "utf8");
+  return fs.readFileSync(path.join(SONGS_FIXTURES_DIR, name), "utf8");
 }
 
 async function main() {
@@ -56,6 +56,10 @@ async function main() {
   check(
     "Non-song XML (no <song> root) detected as unknown",
     migration.detectFormat("<?xml version=\"1.0\"?><foo><bar/></foo>", "weird.xml") === "unknown"
+  );
+  check(
+    "Arbitrary non-XML, non-directive text falls back to plaintext",
+    migration.detectFormat("Just Some Random Text\n\nWith a couple of lines.\nAnd more.", "notes.dat") === "plaintext"
   );
 
   console.log("\n== parseSong: opensong ==");
@@ -124,7 +128,7 @@ async function main() {
 
   console.log("\n== importSongsFromDir (writes to scratch dir) ==");
   {
-    const result = await migration.importSongsFromDir(FIXTURES_DIR);
+    const result = await migration.importSongsFromDir(SONGS_FIXTURES_DIR);
 
     check("imported the 3 well-formed fixtures", result.imported.length === 3);
     check(
@@ -137,11 +141,6 @@ async function main() {
       "malformed fixtures reported as errors, not thrown",
       result.errors.some((e) => e.file === "broken-no-title.xml") && result.errors.some((e) => e.file === "empty.xml")
     );
-    check(
-      "selftest.js itself was skipped or safely errored (not silently mistaken for a song)",
-      !result.imported.includes("selftest")
-    );
-
     for (const id of result.imported) {
       const outPath = path.join(scratchSongsDir, `${id}.json`);
       const exists = fs.existsSync(outPath);
@@ -158,7 +157,7 @@ async function main() {
     // Re-run against the same fixtures dir with the same scratch songs dir already
     // populated from the previous run - re-importing the same titles should append
     // -2 suffixes rather than silently overwrite or crash.
-    const result = await migration.importSongsFromDir(FIXTURES_DIR);
+    const result = await migration.importSongsFromDir(SONGS_FIXTURES_DIR);
     check("second import of same fixtures still imports 3 songs", result.imported.length === 3);
     check(
       "collisions de-duplicated with -2 suffix",
