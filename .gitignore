@@ -1,0 +1,4 @@
+node_modules/
+data/config/secrets.json
+data/uploads/
+*.log

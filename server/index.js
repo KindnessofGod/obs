@@ -1,0 +1,159 @@
+const path = require("path");
+const fs = require("fs");
+const express = require("express");
+const multer = require("multer");
+const { WebSocketServer } = require("ws");
+
+const bible = require("./lib/bible");
+const migration = require("./lib/migration");
+
+const PORT = process.env.PORT || 3210;
+const DATA_DIR = path.join(__dirname, "..", "data");
+const SONGS_DIR = path.join(DATA_DIR, "songs");
+const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements", "announcements.json");
+const BACKGROUNDS_DIR = path.join(DATA_DIR, "backgrounds");
+
+const app = express();
+app.use(express.json());
+app.use("/display", express.static(path.join(__dirname, "..", "public", "display")));
+app.use("/control", express.static(path.join(__dirname, "..", "public", "control")));
+app.use("/backgrounds", express.static(BACKGROUNDS_DIR));
+
+// ---- Bible ----
+
+app.get("/api/bible/translations", (req, res) => {
+  res.json(bible.listTranslations());
+});
+
+app.get("/api/bible/search", (req, res) => {
+  const q = String(req.query.q || "").trim();
+  const translationIds = String(req.query.translations || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!q || translationIds.length === 0) return res.json([]);
+  res.json(bible.searchOffline(q, translationIds));
+});
+
+app.get("/api/bible/verse", async (req, res) => {
+  const { translation, book, chapter, verse } = req.query;
+  if (!translation || !book || !chapter || !verse) {
+    return res.status(400).json({ error: "translation, book, chapter, verse are required" });
+  }
+  try {
+    const result = await bible.getVerse(translation, book, Number(chapter), Number(verse));
+    if (!result) return res.status(404).json({ error: "verse not found" });
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ---- Songs ----
+
+function readSongIndex() {
+  if (!fs.existsSync(SONGS_DIR)) return [];
+  return fs
+    .readdirSync(SONGS_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => {
+      const song = JSON.parse(fs.readFileSync(path.join(SONGS_DIR, f), "utf8"));
+      return { id: song.id, title: song.title };
+    });
+}
+
+app.get("/api/songs", (req, res) => {
+  res.json(readSongIndex());
+});
+
+app.get("/api/songs/:id", (req, res) => {
+  const file = path.join(SONGS_DIR, `${req.params.id}.json`);
+  if (!fs.existsSync(file)) return res.status(404).json({ error: "song not found" });
+  res.json(JSON.parse(fs.readFileSync(file, "utf8")));
+});
+
+const upload = multer({ dest: path.join(DATA_DIR, "uploads") });
+app.post("/api/songs/import", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "file is required" });
+  try {
+    const contents = fs.readFileSync(req.file.path, "utf8");
+    const format = migration.detectFormat(contents, req.file.originalname);
+    const song = migration.parseSong(contents, format);
+    if (!fs.existsSync(SONGS_DIR)) fs.mkdirSync(SONGS_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SONGS_DIR, `${song.id}.json`), JSON.stringify(song, null, 2));
+    res.json({ imported: [song.id], errors: [] });
+  } catch (err) {
+    res.status(422).json({ imported: [], errors: [{ file: req.file.originalname, reason: err.message }] });
+  } finally {
+    fs.unlink(req.file.path, () => {});
+  }
+});
+
+// ---- Announcements ----
+
+app.get("/api/announcements", (req, res) => {
+  if (!fs.existsSync(ANNOUNCEMENTS_FILE)) return res.json([]);
+  res.json(JSON.parse(fs.readFileSync(ANNOUNCEMENTS_FILE, "utf8")));
+});
+
+app.post("/api/announcements", (req, res) => {
+  const { title, body } = req.body || {};
+  if (!title) return res.status(400).json({ error: "title is required" });
+  const dir = path.dirname(ANNOUNCEMENTS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const list = fs.existsSync(ANNOUNCEMENTS_FILE) ? JSON.parse(fs.readFileSync(ANNOUNCEMENTS_FILE, "utf8")) : [];
+  list.push({ title, body: body || "" });
+  fs.writeFileSync(ANNOUNCEMENTS_FILE, JSON.stringify(list, null, 2));
+  res.json(list);
+});
+
+// ---- Config (non-secret only) ----
+
+app.get("/api/config", (req, res) => {
+  const backgrounds = fs.existsSync(BACKGROUNDS_DIR) ? fs.readdirSync(BACKGROUNDS_DIR) : [];
+  res.json({ backgrounds });
+});
+
+const server = app.listen(PORT, () => {
+  console.log(`Church presenter running: control http://localhost:${PORT}/control  display http://localhost:${PORT}/display`);
+});
+
+// ---- WebSocket sync ----
+
+const wss = new WebSocketServer({ server, path: "/ws" });
+
+let state = { visible: false, current: null };
+
+function broadcast(message) {
+  const payload = JSON.stringify(message);
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN) client.send(payload);
+  }
+}
+
+wss.on("connection", (ws) => {
+  ws.send(JSON.stringify({ type: "state", visible: state.visible, current: state.current }));
+
+  ws.on("message", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (msg.type === "show" && msg.slideType && msg.content) {
+      state = { visible: true, current: { slideType: msg.slideType, content: msg.content } };
+      broadcast({ type: "show", slideType: msg.slideType, content: msg.content });
+    } else if (msg.type === "update" && msg.content && state.current) {
+      state.current.content = msg.content;
+      broadcast({ type: "update", content: msg.content });
+    } else if (msg.type === "hide") {
+      state = { visible: false, current: state.current };
+      broadcast({ type: "hide" });
+    }
+  });
+});
+
+bible.init().catch((err) => {
+  console.error("Bible data layer failed to initialize:", err.message);
+});

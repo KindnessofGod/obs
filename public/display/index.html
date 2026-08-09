@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Display — Church Presenter</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!--
+    This page is rendered by OBS as a Browser Source, layered on top of the
+    live camera feed. It must stay fully transparent everywhere except the
+    lower-third graphic itself (see style.css). Nothing here should be
+    clickable/interactive since OBS Browser Sources are typically not
+    interacted with during a live service.
+  -->
+  <div id="stage">
+    <div id="lower-third" class="lower-third" aria-hidden="true">
+      <div class="lt-inner">
+        <div id="lt-bg" class="lt-bg no-bg"></div>
+        <div id="lt-content" class="lt-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
