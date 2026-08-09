@@ -170,10 +170,13 @@
       // update when state.current already exists).
       return;
     }
+    // Hide is a safety-critical control: once the operator has hidden the
+    // bar, an "update" (e.g. from Prev/Next verse stepping) must never pop
+    // it back onto the live stream/projector on its own. Only apply the new
+    // content in-place while already visible; while hidden, just remember
+    // it for whenever the operator explicitly shows something again.
     if (isVisible) {
       swapInPlace(currentSlideType, content);
-    } else {
-      showEntrance(currentSlideType, content);
     }
   }
 

@@ -68,11 +68,19 @@ app.get("/api/songs", (req, res) => {
 
 app.get("/api/songs/:id", (req, res) => {
   const file = path.join(SONGS_DIR, `${req.params.id}.json`);
+  // req.params.id is decoded by Express *after* route matching, so an id like
+  // "..%2f..%2fpackage" (percent-encoded, matches as a single path segment)
+  // decodes to "../../package" and can escape SONGS_DIR via path.join. Guard
+  // against that path traversal by rejecting anything that resolves outside it.
+  if (!file.startsWith(SONGS_DIR + path.sep)) return res.status(400).json({ error: "invalid song id" });
   if (!fs.existsSync(file)) return res.status(404).json({ error: "song not found" });
   res.json(JSON.parse(fs.readFileSync(file, "utf8")));
 });
 
-const upload = multer({ dest: path.join(DATA_DIR, "uploads") });
+const upload = multer({
+  dest: path.join(DATA_DIR, "uploads"),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB - generous for a song file, bounds a runaway upload
+});
 app.post("/api/songs/import", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "file is required" });
   try {

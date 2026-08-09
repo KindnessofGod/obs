@@ -30,6 +30,11 @@ const LICENSED_TRANSLATIONS = [
 const LICENSED_IDS = new Set(LICENSED_TRANSLATIONS.map((t) => t.id));
 
 const MAX_ESV_CACHE_ENTRIES = 500; // ESV API terms: never hold more than 500 verses.
+// API.Bible's terms don't share that specific 500-verse figure, but an
+// unbounded in-memory cache is never desirable on a long-running process
+// either - apply the same sane bound to every licensed translation so
+// NIV/AMP (and anything added later) can't grow without limit.
+const MAX_LICENSED_CACHE_ENTRIES = 500;
 
 // ---- module state, populated by init() ----
 
@@ -49,7 +54,8 @@ function getOrCreateCache(translationId) {
 function cacheSet(translationId, key, value) {
   const cache = getOrCreateCache(translationId);
   cache.set(key, value);
-  if (translationId === "esv" && cache.size > MAX_ESV_CACHE_ENTRIES) {
+  const limit = translationId === "esv" ? MAX_ESV_CACHE_ENTRIES : MAX_LICENSED_CACHE_ENTRIES;
+  if (cache.size > limit) {
     // Map preserves insertion order - evict the oldest entry.
     const oldestKey = cache.keys().next().value;
     cache.delete(oldestKey);
@@ -205,15 +211,22 @@ function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// searchByKeyword is O(verses * tokens) - fine for realistic pastor-facing
+// input (a reference, a short phrase, a single word), but someone pasting a
+// whole paragraph into the search box instead of a phrase would otherwise
+// scale linearly past the "well under 200ms" budget. No real verse search
+// needs more than a double-digit number of words, so cap it.
+const MAX_KEYWORD_TOKENS = 15;
+
 function searchByKeyword(query, translations) {
   const phrase = query.toLowerCase();
-  const tokens = phrase.split(/\s+/).filter(Boolean);
+  const tokens = phrase.split(/\s+/).filter(Boolean).slice(0, MAX_KEYWORD_TOKENS);
   const MAX_RESULTS = 25;
 
   // Word-boundary matching, not plain substring - otherwise a token like
   // "so" matches inside "Solomon" and "loved" matches inside "beloved",
   // flooding results with verses that don't actually contain the word.
-  const phraseRe = new RegExp(`\\b${escapeRegExp(phrase)}\\b`);
+  const phraseRe = new RegExp(`\\b${escapeRegExp(phrase.split(/\s+/).filter(Boolean).slice(0, MAX_KEYWORD_TOKENS).join(" "))}\\b`);
   const tokenRes = tokens.map((tok) => new RegExp(`\\b${escapeRegExp(tok)}\\b`));
 
   const scored = [];
