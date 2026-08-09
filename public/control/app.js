@@ -1,0 +1,582 @@
+(() => {
+  "use strict";
+
+  // ============================================================
+  // WebSocket connection
+  // ============================================================
+
+  let ws = null;
+  let wsBackoff = 1000;
+  const WS_BACKOFF_MAX = 8000;
+
+  const wsStatusEl = document.getElementById("wsStatus");
+
+  function setWsStatus(state) {
+    wsStatusEl.className = "ws-status ws-" + state;
+    wsStatusEl.querySelector(".label").textContent =
+      state === "connected" ? "connected" : state === "connecting" ? "connecting…" : "reconnecting…";
+  }
+
+  function connectWs() {
+    setWsStatus(ws ? "connecting" : "connecting");
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${proto}//${window.location.host}/ws`);
+
+    ws.addEventListener("open", () => {
+      wsBackoff = 1000;
+      setWsStatus("connected");
+    });
+
+    ws.addEventListener("close", () => {
+      setWsStatus("disconnected");
+      scheduleReconnect();
+    });
+
+    ws.addEventListener("error", () => {
+      setWsStatus("disconnected");
+    });
+
+    ws.addEventListener("message", (event) => {
+      let msg;
+      try {
+        msg = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      handleServerMessage(msg);
+    });
+  }
+
+  function scheduleReconnect() {
+    setTimeout(connectWs, wsBackoff);
+    wsBackoff = Math.min(wsBackoff * 1.6, WS_BACKOFF_MAX);
+  }
+
+  function send(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(obj));
+    }
+  }
+
+  connectWs();
+
+  // ============================================================
+  // Live banner + server -> client state sync
+  // ============================================================
+
+  const liveBannerEl = document.getElementById("liveBanner");
+  let liveSlideType = null; // tracks the slideType of whatever is currently live, for `update` messages
+
+  function renderLiveBanner(visible, current) {
+    if (!visible || !current) {
+      liveBannerEl.className = "live-banner live-empty";
+      liveBannerEl.textContent = "Nothing showing";
+      return;
+    }
+    liveBannerEl.className = "live-banner";
+    const { slideType, content } = current;
+    liveSlideType = slideType;
+    let text = "";
+    if (slideType === "scripture") text = `${content.reference} (${(content.translation || "").toUpperCase()})`;
+    else if (slideType === "lyric") text = `${content.songTitle} — ${content.slideLabel}`;
+    else if (slideType === "announcement") text = content.title;
+    liveBannerEl.innerHTML = `<span class="live-kind">${slideType}</span>${escapeHtml(text)}`;
+  }
+
+  function handleServerMessage(msg) {
+    if (msg.type === "state") {
+      renderLiveBanner(msg.visible, msg.current);
+      if (msg.visible && msg.current) reconcileLiveState(msg.current);
+    } else if (msg.type === "show") {
+      renderLiveBanner(true, { slideType: msg.slideType, content: msg.content });
+      reconcileLiveState({ slideType: msg.slideType, content: msg.content });
+    } else if (msg.type === "update") {
+      // content updated in place; slideType assumed unchanged (server only allows
+      // `update` on an existing `current`, so liveSlideType is already set)
+      renderLiveBanner(true, { slideType: liveSlideType, content: msg.content });
+      reconcileLiveState({ slideType: liveSlideType, content: msg.content });
+    } else if (msg.type === "hide") {
+      renderLiveBanner(false, null);
+    }
+  }
+
+  // Best-effort: when a slide becomes live (from our own action, another control
+  // window, or a page reload's initial `state`), keep the Prev/Next context in sync
+  // so navigation buttons work no matter who set the current slide.
+  function reconcileLiveState(current) {
+    if (current.slideType === "scripture") {
+      const parsed = parseReference(current.content.reference);
+      if (parsed) {
+        currentScripture = { translation: current.content.translation, ...parsed };
+        renderScriptureNav(current.content);
+      }
+    } else if (current.slideType === "lyric") {
+      if (isLocallyTrackedLyric(current.content)) return; // already reflects our own action, skip refetch
+      restoreLyricNavContext(current.content);
+    }
+  }
+
+  function isLocallyTrackedLyric(content) {
+    if (!currentSong || currentSlideIndex < 0) return false;
+    const slide = currentSong.slides[currentSlideIndex];
+    return !!slide && currentSong.title === content.songTitle && slide.label === content.slideLabel && JSON.stringify(slide.lines) === JSON.stringify(content.lines);
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str == null ? "" : String(str);
+    return div.innerHTML;
+  }
+
+  // ============================================================
+  // Tabs
+  // ============================================================
+
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
+
+  function switchTab(name) {
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
+    if (name === "songs") ensureSongsLoaded();
+    if (name === "announcements") loadAnnouncements();
+  }
+
+  // ============================================================
+  // Hide / Clear (always available, safety-critical)
+  // ============================================================
+
+  document.getElementById("hideBtn").addEventListener("click", () => {
+    send({ type: "hide" });
+    renderLiveBanner(false, null);
+  });
+
+  // ============================================================
+  // Debounce helper
+  // ============================================================
+
+  function debounce(fn, wait) {
+    let t = null;
+    const wrapped = (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
+    wrapped.cancel = () => clearTimeout(t);
+    return wrapped;
+  }
+
+  // ============================================================
+  // Scripture tab
+  // ============================================================
+
+  const scriptureSearchEl = document.getElementById("scriptureSearch");
+  const scriptureResultsEl = document.getElementById("scriptureResults");
+  const translationPickerEl = document.getElementById("translationPicker");
+  const scriptureNavEl = document.getElementById("scriptureNav");
+  const currentVerseLabelEl = document.getElementById("currentVerseLabel");
+  const prevVerseBtn = document.getElementById("prevVerseBtn");
+  const nextVerseBtn = document.getElementById("nextVerseBtn");
+
+  let translations = [];
+  let selectedTranslations = new Set();
+  let currentScripture = null; // { translation, book, chapter, verse }
+
+  async function loadTranslations() {
+    try {
+      const res = await fetch("/api/bible/translations");
+      translations = await res.json();
+    } catch {
+      translations = [];
+    }
+
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem("obs-control:selectedTranslations") || "null");
+    } catch {
+      saved = null;
+    }
+
+    selectedTranslations = new Set(
+      Array.isArray(saved) && saved.length ? saved.filter((id) => translations.some((t) => t.id === id)) : translations.map((t) => t.id)
+    );
+
+    renderTranslationPicker();
+  }
+
+  function renderTranslationPicker() {
+    translationPickerEl.innerHTML = "";
+    translations.forEach((t) => {
+      const label = document.createElement("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = t.id;
+      cb.checked = selectedTranslations.has(t.id);
+      cb.addEventListener("change", () => {
+        if (cb.checked) selectedTranslations.add(t.id);
+        else selectedTranslations.delete(t.id);
+        localStorage.setItem("obs-control:selectedTranslations", JSON.stringify([...selectedTranslations]));
+        runScriptureSearch();
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(" " + t.id.toUpperCase()));
+      if (t.licensed) {
+        const tag = document.createElement("span");
+        tag.className = "licensed-tag";
+        tag.textContent = "licensed";
+        label.appendChild(tag);
+      }
+      translationPickerEl.appendChild(label);
+    });
+  }
+
+  async function searchScripture(query, translationIds) {
+    if (!query.trim() || translationIds.length === 0) return [];
+    const params = new URLSearchParams({ q: query, translations: translationIds.join(",") });
+    const res = await fetch("/api/bible/search?" + params.toString());
+    if (!res.ok) return [];
+    return res.json();
+  }
+
+  function renderScriptureResults(results) {
+    scriptureResultsEl.innerHTML = "";
+    if (results.length === 0) {
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = scriptureSearchEl.value.trim() ? "No matches" : "Type a reference (jn 3:16) or keywords";
+      scriptureResultsEl.appendChild(hint);
+      return;
+    }
+    results.forEach((r) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "result-item";
+      item.innerHTML = `
+        <div class="ref-line">
+          <span>${escapeHtml(r.book)} ${r.chapter}:${r.verse}</span>
+          <span class="translation-badge">${escapeHtml(r.translation)}</span>
+        </div>
+        <div class="verse-text">${escapeHtml(r.text)}</div>`;
+      item.addEventListener("click", () => showScriptureVerse(r));
+      scriptureResultsEl.appendChild(item);
+    });
+  }
+
+  const debouncedScriptureSearch = debounce(runScriptureSearch, 150);
+
+  let lastScriptureResults = [];
+
+  async function runScriptureSearch() {
+    const query = scriptureSearchEl.value;
+    const results = await searchScripture(query, [...selectedTranslations]);
+    lastScriptureResults = results;
+    renderScriptureResults(results);
+    return results;
+  }
+
+  scriptureSearchEl.addEventListener("input", () => debouncedScriptureSearch());
+
+  scriptureSearchEl.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      debouncedScriptureSearch.cancel();
+      const results = await runScriptureSearch();
+      if (results.length > 0) showScriptureVerse(results[0]);
+    }
+  });
+
+  function showScriptureVerse(verse) {
+    currentScripture = { translation: verse.translation, book: verse.book, chapter: verse.chapter, verse: verse.verse };
+    const content = { reference: `${verse.book} ${verse.chapter}:${verse.verse}`, translation: verse.translation, text: verse.text };
+    send({ type: "show", slideType: "scripture", content });
+    renderLiveBanner(true, { slideType: "scripture", content });
+    renderScriptureNav(content);
+  }
+
+  function renderScriptureNav(content) {
+    scriptureNavEl.hidden = false;
+    currentVerseLabelEl.textContent = `${content.reference} (${content.translation.toUpperCase()})`;
+  }
+
+  async function fetchVerse(translation, book, chapter, verse) {
+    const params = new URLSearchParams({ translation, book, chapter: String(chapter), verse: String(verse) });
+    const res = await fetch("/api/bible/verse?" + params.toString());
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error("verse lookup failed");
+    return res.json();
+  }
+
+  async function stepVerse(delta) {
+    if (!currentScripture) return;
+    const { translation, book, chapter, verse } = currentScripture;
+    let targetChapter = chapter;
+    let targetVerse = verse + delta;
+
+    if (targetVerse < 1) {
+      targetChapter = chapter - 1;
+      targetVerse = 1;
+      if (targetChapter < 1) return; // start of book, nothing more to do
+    }
+
+    prevVerseBtn.disabled = nextVerseBtn.disabled = true;
+    try {
+      let result = await fetchVerse(translation, book, targetChapter, targetVerse);
+      if (!result && delta > 0) {
+        // ran off the end of the chapter -> jump to the start of the next one
+        result = await fetchVerse(translation, book, chapter + 1, 1);
+      }
+      if (!result) return; // likely end/start of book; leave as-is
+
+      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
+      const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
+      send({ type: "update", content });
+      renderLiveBanner(true, { slideType: "scripture", content });
+      renderScriptureNav(content);
+    } catch {
+      // network hiccup; leave current slide untouched
+    } finally {
+      prevVerseBtn.disabled = nextVerseBtn.disabled = false;
+    }
+  }
+
+  prevVerseBtn.addEventListener("click", () => stepVerse(-1));
+  nextVerseBtn.addEventListener("click", () => stepVerse(1));
+
+  function parseReference(ref) {
+    // "John 3:16" / "1 John 3:16" -> { book, chapter, verse }
+    const m = /^(.+)\s+(\d+):(\d+)$/.exec(String(ref || "").trim());
+    if (!m) return null;
+    return { book: m[1], chapter: Number(m[2]), verse: Number(m[3]) };
+  }
+
+  loadTranslations().then(() => renderScriptureResults([]));
+
+  // ============================================================
+  // Songs tab
+  // ============================================================
+
+  const songSearchEl = document.getElementById("songSearch");
+  const songListEl = document.getElementById("songList");
+  const songDetailEl = document.getElementById("songDetail");
+  const songDetailTitleEl = document.getElementById("songDetailTitle");
+  const slideListEl = document.getElementById("slideList");
+  const currentSlideLabelEl = document.getElementById("currentSlideLabel");
+  const prevSlideBtn = document.getElementById("prevSlideBtn");
+  const nextSlideBtn = document.getElementById("nextSlideBtn");
+
+  let songsIndex = [];
+  let songsLoaded = false;
+  let currentSong = null; // full song object { id, title, slides }
+  let currentSlideIndex = -1;
+  let pendingLyricRestore = null; // content from a `state`/`show` we couldn't resolve yet
+
+  async function ensureSongsLoaded() {
+    if (songsLoaded) return;
+    try {
+      const res = await fetch("/api/songs");
+      songsIndex = await res.json();
+      songsLoaded = true;
+      renderSongList(songSearchEl.value);
+      if (pendingLyricRestore) {
+        const content = pendingLyricRestore;
+        pendingLyricRestore = null;
+        restoreLyricNavContext(content);
+      }
+    } catch {
+      songsIndex = [];
+    }
+  }
+
+  function renderSongList(filter) {
+    const q = (filter || "").trim().toLowerCase();
+    const matches = q ? songsIndex.filter((s) => s.title.toLowerCase().includes(q)) : songsIndex;
+    songListEl.innerHTML = "";
+    if (matches.length === 0) {
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = songsIndex.length ? "No matches" : "No songs yet";
+      songListEl.appendChild(hint);
+      return;
+    }
+    matches.forEach((s) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "result-item song-item";
+      item.innerHTML = `<span>${escapeHtml(s.title)}</span>`;
+      item.addEventListener("click", () => openSong(s.id));
+      songListEl.appendChild(item);
+    });
+  }
+
+  songSearchEl.addEventListener("input", () => renderSongList(songSearchEl.value));
+
+  async function openSong(id, opts) {
+    const silent = opts && opts.silent;
+    try {
+      const res = await fetch(`/api/songs/${encodeURIComponent(id)}`);
+      if (!res.ok) return;
+      currentSong = await res.json();
+    } catch {
+      return;
+    }
+    currentSlideIndex = -1;
+    songDetailEl.hidden = false;
+    songDetailTitleEl.textContent = currentSong.title;
+    renderSlideList();
+    if (!silent && currentSong.slides.length > 0) {
+      showSlide(0);
+    }
+  }
+
+  document.getElementById("backToSongsBtn").addEventListener("click", () => {
+    songDetailEl.hidden = true;
+  });
+
+  function renderSlideList() {
+    slideListEl.innerHTML = "";
+    (currentSong.slides || []).forEach((slide, idx) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "result-item slide-item" + (idx === currentSlideIndex ? " active" : "");
+      item.innerHTML = `<div class="slide-label">${escapeHtml(slide.label)}</div><div class="slide-lines">${escapeHtml(slide.lines.join("\n"))}</div>`;
+      item.addEventListener("click", () => showSlide(idx));
+      slideListEl.appendChild(item);
+    });
+    updateSlideNavLabel();
+  }
+
+  function updateSlideNavLabel() {
+    if (!currentSong || currentSlideIndex < 0) {
+      currentSlideLabelEl.textContent = "";
+      return;
+    }
+    const slide = currentSong.slides[currentSlideIndex];
+    currentSlideLabelEl.textContent = slide ? `${currentSlideIndex + 1}/${currentSong.slides.length} — ${slide.label}` : "";
+  }
+
+  function slideContent(slide) {
+    return { songTitle: currentSong.title, slideLabel: slide.label, lines: slide.lines };
+  }
+
+  function showSlide(idx) {
+    if (!currentSong || idx < 0 || idx >= currentSong.slides.length) return;
+    const isFirstShow = currentSlideIndex < 0;
+    currentSlideIndex = idx;
+    const slide = currentSong.slides[idx];
+    const content = slideContent(slide);
+    send({ type: isFirstShow ? "show" : "update", slideType: "lyric", content });
+    renderLiveBanner(true, { slideType: "lyric", content });
+    renderSlideList();
+  }
+
+  prevSlideBtn.addEventListener("click", () => {
+    if (currentSong && currentSlideIndex > 0) showSlide(currentSlideIndex - 1);
+  });
+  nextSlideBtn.addEventListener("click", () => {
+    if (currentSong && currentSlideIndex < currentSong.slides.length - 1) showSlide(currentSlideIndex + 1);
+  });
+
+  // Best-effort reconstruction of "which slide of which song is live" after a
+  // reload or when another /control window drives the change.
+  function restoreLyricNavContext(content) {
+    if (!songsLoaded) {
+      pendingLyricRestore = content;
+      return;
+    }
+    const match = songsIndex.find((s) => s.title === content.songTitle);
+    if (!match) return;
+    fetch(`/api/songs/${encodeURIComponent(match.id)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((song) => {
+        if (!song) return;
+        currentSong = song;
+        const idx = song.slides.findIndex(
+          (sl) => sl.label === content.slideLabel && JSON.stringify(sl.lines) === JSON.stringify(content.lines)
+        );
+        currentSlideIndex = idx >= 0 ? idx : -1;
+        songDetailEl.hidden = false;
+        songDetailTitleEl.textContent = song.title;
+        renderSlideList();
+      })
+      .catch(() => {});
+  }
+
+  // ============================================================
+  // Announcements tab
+  // ============================================================
+
+  const announcementListEl = document.getElementById("announcementList");
+  const annTitleEl = document.getElementById("annTitle");
+  const annBodyEl = document.getElementById("annBody");
+  const annSaveStatusEl = document.getElementById("annSaveStatus");
+
+  let announcementsLoaded = false;
+
+  async function loadAnnouncements(force) {
+    if (announcementsLoaded && !force) return;
+    try {
+      const res = await fetch("/api/announcements");
+      const list = await res.json();
+      announcementsLoaded = true;
+      renderAnnouncements(list);
+    } catch {
+      renderAnnouncements([]);
+    }
+  }
+
+  function renderAnnouncements(list) {
+    announcementListEl.innerHTML = "";
+    if (list.length === 0) {
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = "No saved announcements yet";
+      announcementListEl.appendChild(hint);
+      return;
+    }
+    list.forEach((a) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "result-item announcement-item";
+      item.innerHTML = `<div class="ann-title">${escapeHtml(a.title)}</div><div class="ann-body">${escapeHtml(a.body || "")}</div>`;
+      item.addEventListener("click", () => showAnnouncement(a));
+      announcementListEl.appendChild(item);
+    });
+  }
+
+  function showAnnouncement(a) {
+    const content = { title: a.title, body: a.body || "" };
+    send({ type: "show", slideType: "announcement", content });
+    renderLiveBanner(true, { slideType: "announcement", content });
+  }
+
+  document.getElementById("annShowBtn").addEventListener("click", () => {
+    const title = annTitleEl.value.trim();
+    if (!title) {
+      annTitleEl.focus();
+      return;
+    }
+    showAnnouncement({ title, body: annBodyEl.value });
+  });
+
+  document.getElementById("annSaveBtn").addEventListener("click", async () => {
+    const title = annTitleEl.value.trim();
+    if (!title) {
+      annTitleEl.focus();
+      return;
+    }
+    try {
+      const res = await fetch("/api/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body: annBodyEl.value }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      const list = await res.json();
+      renderAnnouncements(list);
+      annSaveStatusEl.textContent = "Saved.";
+      setTimeout(() => (annSaveStatusEl.textContent = ""), 2000);
+    } catch {
+      annSaveStatusEl.textContent = "Save failed.";
+      annSaveStatusEl.style.color = "var(--danger)";
+    }
+  });
+})();

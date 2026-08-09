@@ -55,6 +55,15 @@ html, body {
   position: relative;
   width: 100%;
   height: 100%;
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+
+/* Used for in-place content swaps ("show" while already visible, or
+   "update") — the whole bar stays put and only the bg+text crossfade,
+   so switching slides never re-triggers the slide-up/fade-in entrance. */
+.lt-inner.is-swapping {
+  opacity: 0;
 }
 
 /* ---- Background layer --------------------------------------------------
@@ -117,15 +126,7 @@ html, body {
 }
 
 .lt-content .slide {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 220ms ease, transform 220ms ease;
   max-width: 88vw;
-}
-
-.lt-content .slide.is-swapping {
-  opacity: 0;
-  transform: translateY(6px);
 }
 
 /* Scripture ---------------------------------------------------------------- */
