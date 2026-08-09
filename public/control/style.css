@@ -16,6 +16,11 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute must always win, even over classes like .nav-controls
+   that set their own `display` — otherwise elements toggled via `.hidden = true`
+   (scriptureNav, songDetail) would stay visible. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -132,9 +137,6 @@ input[type="text"]:focus, textarea:focus {
 #tabs {
   display: flex;
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 45px;
-  z-index: 19;
   background: var(--bg);
 }
 .tab-btn {
