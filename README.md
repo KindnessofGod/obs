@@ -69,22 +69,39 @@ Save it, and double-click `start.bat` before opening OBS each service.
 
 ## 3. Using it during service
 
-The control dock has three tabs and one big "Hide / Clear" button that's
-always visible no matter which tab you're on.
+The control dock has four tabs, a persistent "staged" strip with a big
+**Display Live** button, and one always-visible "Hide / Clear" button — no
+matter which tab you're on.
+
+**Select first, then go live.** Clicking a scripture result, a song slide, or
+an announcement never puts it on screen by itself — it only *stages* it (shown
+in the strip right below the live banner). Nothing changes on the
+projector/stream until you click **Display Live**. This is deliberate: you can
+line up the next verse or song while something else is still showing, check it
+in the Preview tab, and only then commit it.
 
 - **Scripture tab** — type a reference (`jn 3:16`, `john 3:16-18`, `1 cor 13`
   for a whole chapter) or keywords (`god so loved`) into the search box.
-  Results appear as you type. Click a result — or just press Enter to show
-  the top match instantly — and it's live on screen. Use Next/Previous to
-  step through a passage without re-searching. The row of pill buttons above
-  the search box picks **one** translation at a time (KJV, ASV, etc.) — click
-  a different one and both the search and whatever verse is currently loaded
-  instantly switch to it, no re-searching needed.
-- **Songs tab** — type to filter your song list by title, click a song to
-  open its slides (Verse 1, Chorus, etc.), click a slide to show it, use
-  Next/Previous to step through in order.
-- **Announcements tab** — click a saved announcement to show it, or type a
-  title/body on the fly and hit "Show now" for something one-off.
+  Results appear as you type. Click a result — or press Enter to stage the top
+  match — to stage it, then click **Display Live** to put it on screen. Once
+  it's live, Next/Previous steps through the passage live in real time (no
+  extra clicks needed); if it's only staged (not live yet), Next/Previous just
+  updates the preview instead. The row of pill buttons above the search box
+  picks **one** translation at a time (KJV, ASV, etc.) — switching translation
+  updates whatever verse you currently have selected, live or staged.
+- **Songs tab** — type to filter your song list by title, click a song to open
+  its slides (Verse 1, Chorus, etc.) and stage the first one automatically.
+  Click any slide to stage it, or use Next/Previous — same live-vs-staged
+  behavior as Scripture: instant live stepping once it's actually on screen,
+  silent preview updates before that.
+- **Announcements tab** — click a saved announcement, or type a title/body and
+  hit "Stage", then confirm with **Display Live**.
+- **Preview tab** — shows exactly what's staged, rendered with your real
+  background graphic and text size, before it ever touches the
+  projector/stream. This is the "does it look right" check.
+- **Display Live** (in the strip below the live banner, visible on every tab)
+  — puts whatever's currently staged on screen. Disabled when nothing's
+  staged.
 - **Hide / Clear** — kills whatever's currently on screen immediately, from
   any tab. Use this the moment the pastor moves on.
 - **Text size (A− / A+ next to Hide)** — bumps the on-screen text bigger or
@@ -96,6 +113,12 @@ always visible no matter which tab you're on.
   separately). If there's only one file in that folder it's auto-selected the
   first time you open the app, so if you only have one lower-third graphic
   you likely won't need to touch this at all.
+
+**If a click ever seems to do nothing**: check the connection dot next to
+"Hide / Clear". If it says "reconnecting… (n pending)", the app noticed it
+lost its connection (e.g. OBS reloaded the dock) — whatever you clicked is
+queued and will go through the instant it reconnects, usually within a couple
+of seconds. It's no longer silently dropped.
 
 ## 4. Bible translations
 

@@ -8,13 +8,28 @@
   let ws = null;
   let wsBackoff = 1000;
   const WS_BACKOFF_MAX = 8000;
+  const PENDING_QUEUE_MAX = 20; // defensive cap, not a realistic operator click rate
 
   const wsStatusEl = document.getElementById("wsStatus");
+  let wsState = "connecting";
+
+  // Messages queued because the socket wasn't open at send() time - flushed the
+  // moment it reconnects. Without this, clicking Show/Hide/Next during a
+  // momentary disconnect (which happens routinely - OBS browser source
+  // reloads, brief network hiccups) silently did nothing: no error, no retry,
+  // nothing on screen, and no indication to the operator that anything failed.
+  let pendingQueue = [];
 
   function setWsStatus(state) {
-    wsStatusEl.className = "ws-status ws-" + state;
-    wsStatusEl.querySelector(".label").textContent =
-      state === "connected" ? "connected" : state === "connecting" ? "connecting…" : "reconnecting…";
+    wsState = state;
+    renderWsStatus();
+  }
+
+  function renderWsStatus() {
+    wsStatusEl.className = "ws-status ws-" + wsState;
+    let label = wsState === "connected" ? "connected" : wsState === "connecting" ? "connecting…" : "reconnecting…";
+    if (pendingQueue.length) label += ` (${pendingQueue.length} pending)`;
+    wsStatusEl.querySelector(".label").textContent = label;
   }
 
   function connectWs() {
@@ -25,6 +40,7 @@
     ws.addEventListener("open", () => {
       wsBackoff = 1000;
       setWsStatus("connected");
+      flushPendingQueue();
       // Push this operator's saved text-size preference so the display (and
       // any other open control window) picks it up even if the server was
       // restarted since it was last set.
@@ -59,7 +75,19 @@
   function send(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(obj));
+    } else {
+      pendingQueue.push(obj);
+      if (pendingQueue.length > PENDING_QUEUE_MAX) pendingQueue.shift();
+      renderWsStatus();
     }
+  }
+
+  function flushPendingQueue() {
+    if (!pendingQueue.length) return;
+    const queued = pendingQueue;
+    pendingQueue = [];
+    renderWsStatus();
+    queued.forEach((obj) => send(obj));
   }
 
   connectWs();
@@ -115,10 +143,14 @@
       const parsed = parseReference(current.content.reference);
       if (parsed) {
         currentScripture = { translation: current.content.translation, ...parsed };
+        currentScriptureIsLive = true;
         renderScriptureNav(current.content);
       }
     } else if (current.slideType === "lyric") {
-      if (isLocallyTrackedLyric(current.content)) return; // already reflects our own action, skip refetch
+      if (isLocallyTrackedLyric(current.content)) {
+        currentLyricIsLive = true; // already reflects our own action, skip refetch
+        return;
+      }
       restoreLyricNavContext(current.content);
     }
   }
@@ -202,6 +234,8 @@
     // operator sees the new background without having to re-show the content.
     if (liveSlideType === type && lastContent[type]) {
       sendUpdate(type, lastContent[type]);
+    } else if (staged && staged.slideType === type) {
+      pushPreview();
     }
   }
 
@@ -227,6 +261,74 @@
   loadBackgrounds();
 
   // ============================================================
+  // Staging + preview (select first, confirm what it looks like, then
+  // explicitly put it on screen — nothing here touches the live broadcast
+  // until "Display Live" is clicked)
+  // ============================================================
+
+  const stagedBannerEl = document.getElementById("stagedBanner");
+  const stagedTextEl = stagedBannerEl.querySelector(".staged-text");
+  const displayLiveBtn = document.getElementById("displayLiveBtn");
+  const previewFrame = document.getElementById("previewFrame");
+
+  let staged = null; // { slideType, content } | null — content is unmerged (no background yet)
+
+  function renderStagedBanner() {
+    if (!staged) {
+      stagedBannerEl.className = "staged-banner staged-empty";
+      stagedTextEl.textContent = "Nothing staged";
+      displayLiveBtn.disabled = true;
+      return;
+    }
+    stagedBannerEl.className = "staged-banner";
+    const { slideType, content } = staged;
+    let text = "";
+    if (slideType === "scripture") text = `${content.reference} (${(content.translation || "").toUpperCase()})`;
+    else if (slideType === "lyric") text = `${content.songTitle} — ${content.slideLabel}`;
+    else if (slideType === "announcement") text = content.title;
+    stagedTextEl.innerHTML = `<span class="live-kind">${slideType}</span>${escapeHtml(text)}`;
+    displayLiveBtn.disabled = false;
+  }
+
+  function postToPreview(msg) {
+    if (!previewFrame.contentWindow) return;
+    previewFrame.contentWindow.postMessage(msg, window.location.origin);
+  }
+
+  function pushPreview() {
+    if (!staged) {
+      postToPreview({ type: "hide" });
+      return;
+    }
+    postToPreview({ type: "show", slideType: staged.slideType, content: withBackground(staged.slideType, staged.content) });
+  }
+
+  // The preview iframe's own script only starts listening for postMessage
+  // once its document has loaded - a message posted before that is simply
+  // lost (not queued), so re-push current state once it's actually ready.
+  previewFrame.addEventListener("load", pushPreview);
+
+  function stage(slideType, content) {
+    staged = { slideType, content };
+    renderStagedBanner();
+    pushPreview();
+  }
+
+  function clearStaged() {
+    staged = null;
+    renderStagedBanner();
+    pushPreview();
+  }
+
+  displayLiveBtn.addEventListener("click", () => {
+    if (!staged) return;
+    sendShow(staged.slideType, staged.content);
+    if (staged.slideType === "scripture") currentScriptureIsLive = true;
+    if (staged.slideType === "lyric") currentLyricIsLive = true;
+    clearStaged();
+  });
+
+  // ============================================================
   // Tabs
   // ============================================================
 
@@ -239,6 +341,7 @@
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
     if (name === "songs") ensureSongsLoaded();
     if (name === "announcements") loadAnnouncements();
+    if (name === "preview") pushPreview();
   }
 
   // ============================================================
@@ -248,6 +351,10 @@
   document.getElementById("hideBtn").addEventListener("click", () => {
     send({ type: "hide" });
     renderLiveBanner(false, null);
+    // Nothing's actually live anymore - Prev/Next should go back to staging
+    // (previewing) rather than pushing invisible live updates.
+    currentScriptureIsLive = false;
+    currentLyricIsLive = false;
   });
 
   // ============================================================
@@ -326,6 +433,11 @@
   let translations = [];
   let selectedTranslation = null;
   let currentScripture = null; // { translation, book, chapter, verse }
+  // Whether currentScripture is what's actually live right now (vs. merely
+  // staged/previewed) - determines whether Prev/Next and translation
+  // switching push a live update or just restage. A fresh search result is
+  // never live until "Display Live" is clicked.
+  let currentScriptureIsLive = false;
 
   async function loadTranslations() {
     try {
@@ -371,8 +483,8 @@
     localStorage.setItem("obs-control:selectedTranslation", id);
     renderTranslationPicker();
     if (scriptureSearchEl.value.trim()) runScriptureSearch();
-    // A verse is already picked out (shown or not) — jump it to the newly
-    // selected translation instantly instead of making the operator re-search.
+    // A verse is already picked out (live or just staged) — jump it to the
+    // newly selected translation instead of making the operator re-search.
     if (currentScripture) switchCurrentVerseTranslation(id);
   }
 
@@ -384,7 +496,8 @@
       if (!result) return;
       currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
       const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
-      sendUpdate("scripture", content);
+      if (currentScriptureIsLive) sendUpdate("scripture", content);
+      else stage("scripture", content);
       renderScriptureNav(content);
     } catch {
       // network hiccup on a licensed translation; leave current slide untouched
@@ -447,8 +560,12 @@
 
   function showScriptureVerse(verse) {
     currentScripture = { translation: verse.translation, book: verse.book, chapter: verse.chapter, verse: verse.verse };
+    // A freshly picked search result is always a new selection - stage it
+    // for preview/confirmation rather than assuming it should replace
+    // whatever's currently live.
+    currentScriptureIsLive = false;
     const content = { reference: `${verse.book} ${verse.chapter}:${verse.verse}`, translation: verse.translation, text: verse.text };
-    sendShow("scripture", content);
+    stage("scripture", content);
     renderScriptureNav(content);
   }
 
@@ -488,7 +605,8 @@
 
       currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
       const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
-      sendUpdate("scripture", content);
+      if (currentScriptureIsLive) sendUpdate("scripture", content);
+      else stage("scripture", content);
       renderScriptureNav(content);
     } catch {
       // network hiccup; leave current slide untouched
@@ -527,6 +645,9 @@
   let currentSong = null; // full song object { id, title, slides }
   let currentSlideIndex = -1;
   let pendingLyricRestore = null; // content from a `state`/`show` we couldn't resolve yet
+  // Whether currentSong/currentSlideIndex is what's actually live right now
+  // (vs. merely staged/previewed) - same role as currentScriptureIsLive.
+  let currentLyricIsLive = false;
 
   async function ensureSongsLoaded() {
     if (songsLoaded) return;
@@ -582,7 +703,7 @@
     songDetailTitleEl.textContent = currentSong.title;
     renderSlideList();
     if (!silent && currentSong.slides.length > 0) {
-      showSlide(0);
+      selectSlide(0);
     }
   }
 
@@ -597,7 +718,7 @@
       item.type = "button";
       item.className = "result-item slide-item" + (idx === currentSlideIndex ? " active" : "");
       item.innerHTML = `<div class="slide-label">${escapeHtml(slide.label)}</div><div class="slide-lines">${escapeHtml(slide.lines.join("\n"))}</div>`;
-      item.addEventListener("click", () => showSlide(idx));
+      item.addEventListener("click", () => selectSlide(idx));
       slideListEl.appendChild(item);
     });
     updateSlideNavLabel();
@@ -616,22 +737,34 @@
     return { songTitle: currentSong.title, slideLabel: slide.label, lines: slide.lines };
   }
 
-  function showSlide(idx) {
+  function applySlide(idx, live) {
     if (!currentSong || idx < 0 || idx >= currentSong.slides.length) return;
-    const isFirstShow = currentSlideIndex < 0;
     currentSlideIndex = idx;
     const slide = currentSong.slides[idx];
     const content = slideContent(slide);
-    if (isFirstShow) sendShow("lyric", content);
-    else sendUpdate("lyric", content);
+    if (live) sendUpdate("lyric", content);
+    else stage("lyric", content);
     renderSlideList();
   }
 
+  // A direct click on a slide (or auto-opening a song's first slide) is
+  // always a fresh selection - stage it for preview/confirmation.
+  function selectSlide(idx) {
+    currentLyricIsLive = false;
+    applySlide(idx, false);
+  }
+
+  // Prev/Next continues whatever's already true: keeps a live reading
+  // moving in real time, or keeps browsing a staged/previewed song silently.
+  function stepSlide(idx) {
+    applySlide(idx, currentLyricIsLive);
+  }
+
   prevSlideBtn.addEventListener("click", () => {
-    if (currentSong && currentSlideIndex > 0) showSlide(currentSlideIndex - 1);
+    if (currentSong && currentSlideIndex > 0) stepSlide(currentSlideIndex - 1);
   });
   nextSlideBtn.addEventListener("click", () => {
-    if (currentSong && currentSlideIndex < currentSong.slides.length - 1) showSlide(currentSlideIndex + 1);
+    if (currentSong && currentSlideIndex < currentSong.slides.length - 1) stepSlide(currentSlideIndex + 1);
   });
 
   // Best-effort reconstruction of "which slide of which song is live" after a
@@ -652,6 +785,7 @@
           (sl) => sl.label === content.slideLabel && JSON.stringify(sl.lines) === JSON.stringify(content.lines)
         );
         currentSlideIndex = idx >= 0 ? idx : -1;
+        currentLyricIsLive = idx >= 0;
         songDetailEl.hidden = false;
         songDetailTitleEl.textContent = song.title;
         renderSlideList();
@@ -703,7 +837,7 @@
 
   function showAnnouncement(a) {
     const content = { title: a.title, body: a.body || "" };
-    sendShow("announcement", content);
+    stage("announcement", content);
   }
 
   document.getElementById("annShowBtn").addEventListener("click", () => {

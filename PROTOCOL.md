@@ -14,9 +14,17 @@ This document is the shared contract between the server, the `/display` page, th
 - `data/config/config.json` — non-secret app config (enabled translation ids, background file names). **Never put API keys here.**
 - `data/config/secrets.json` — gitignored, holds `{ "esvApiKey": "...", "apiBibleKey": "..." }`. Loaded by `server/lib/bible`. Missing file = licensed translations simply unavailable, offline ones still work.
 
+## Staging vs. going live
+
+`/control` never puts a fresh selection (a scripture search result, a song slide, an announcement) on screen immediately — clicking one only *stages* it locally in the browser tab (not sent over the WebSocket at all). The operator confirms it in the "Preview" tab (a live-accurate `/display?preview=1` iframe, see below) and explicitly clicks **Display Live**, which is the one thing that actually calls `sendShow`/sends a `show` message. Next/Prev only pushes a live `update` when the thing being stepped through is *already* live (tracked client-side per slide type, e.g. `currentScriptureIsLive`); otherwise it just restages. This is entirely a `/control`-local concern - the server and `/display` have no notion of "staged," only "live" (the WebSocket protocol below is unchanged).
+
+## Preview (postMessage, not the WebSocket)
+
+`/control`'s Preview tab embeds `/display/?preview=1` in an iframe. With `?preview=1`, `/display` skips the WebSocket entirely and instead renders whatever the parent window `postMessage`s to it - same message shapes as the WebSocket protocol below (`show`/`update`/`hide`/`textScale`), just delivered via `iframe.contentWindow.postMessage(msg, window.location.origin)` instead of over the wire. This gives a pixel-accurate preview (actual background graphic, actual text sizing) that's completely isolated from the real live broadcast state.
+
 ## WebSocket protocol
 
-One shared endpoint: `ws://localhost:3210/ws`. Every `/display` and `/control` page connects to it. Messages are JSON objects with a `type` field.
+One shared endpoint: `ws://localhost:3210/ws`. Every `/display` and `/control` page connects to it (except `/display?preview=1`, see above). Messages are JSON objects with a `type` field.
 
 ### Server → client (broadcast to all connected clients, both display and control)
 
@@ -66,6 +74,8 @@ Only `/control` sends these; the server validates then re-broadcasts the corresp
 { "type": "hide" }
 { "type": "textScale", "scale": 1.2 }
 ```
+
+`/control`'s `send()` queues any message it can't deliver immediately (socket not `OPEN` - a momentary reconnect, an OBS browser source reload, a server restart) instead of silently dropping it, and flushes the queue in order the moment the socket reopens. The `ws` status indicator in the top bar shows a `(n pending)` count whenever something is queued, so a click during a brief disconnect still ends up on screen once reconnected rather than silently vanishing.
 
 ## REST API (used by `/control` for search/lookup; `/display` only uses the WebSocket)
 

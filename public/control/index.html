@@ -23,10 +23,18 @@
 
   <div id="liveBanner" class="live-banner live-empty">Nothing showing</div>
 
+  <!-- Persistent across every tab: shows whatever's staged (selected but not
+       yet broadcast) and the one button that actually puts it on screen. -->
+  <div id="stagedBanner" class="staged-banner staged-empty">
+    <span class="staged-text">Nothing staged</span>
+    <button id="displayLiveBtn" class="primary-btn" disabled>Display Live</button>
+  </div>
+
   <nav id="tabs">
     <button class="tab-btn active" data-tab="scripture">Scripture</button>
     <button class="tab-btn" data-tab="songs">Songs</button>
     <button class="tab-btn" data-tab="announcements">Announcements</button>
+    <button class="tab-btn" data-tab="preview">Preview</button>
   </nav>
 
   <!-- ===================== SCRIPTURE ===================== -->
@@ -89,12 +97,24 @@
         <input id="annTitle" type="text" placeholder="Title" />
         <textarea id="annBody" placeholder="Body" rows="3"></textarea>
         <div class="btn-row">
-          <button id="annShowBtn" class="primary-btn">Show now</button>
+          <button id="annShowBtn" class="primary-btn">Stage</button>
           <button id="annSaveBtn">Save for reuse</button>
         </div>
         <div id="annSaveStatus" class="save-status"></div>
       </div>
     </details>
+  </section>
+
+  <!-- ===================== PREVIEW ===================== -->
+  <section id="tab-preview" class="tab-panel">
+    <div class="preview-frame-wrap">
+      <iframe id="previewFrame" src="/display/?preview=1" title="Live-accurate preview of staged content"></iframe>
+    </div>
+    <p class="preview-hint">
+      Shows exactly how the staged content will look on the projector/stream,
+      including its real background — nothing here is actually live until you
+      hit "Display Live".
+    </p>
   </section>
 
   <script src="app.js"></script>

@@ -234,81 +234,107 @@
     }
   }
 
-  // ---- WebSocket connection + reconnect with backoff ---------------------
+  // ---- Shared message handling (used by both the live WebSocket and, in
+  // preview mode, postMessage from a parent /control window) -----------------
 
-  var RECONNECT_DELAYS = [500, 1000, 2000, 4000, 8000, 10000];
-  var reconnectAttempt = 0;
-  var reconnectTimer = null;
-  var ws = null;
-
-  function wsUrl() {
-    var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return protocol + "//" + window.location.host + "/ws";
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case "state":
+        applyState(msg);
+        break;
+      case "show":
+        if (msg.slideType && msg.content) applyShow(msg.slideType, msg.content);
+        break;
+      case "update":
+        if (msg.content) applyUpdate(msg.content);
+        break;
+      case "hide":
+        applyHide();
+        break;
+      case "textScale":
+        applyTextScale(msg.scale);
+        break;
+      default:
+        console.warn("[display] unknown message type:", msg.type);
+    }
   }
 
-  function connect() {
-    clearTimeout(reconnectTimer);
-    try {
-      ws = new WebSocket(wsUrl());
-    } catch (err) {
-      scheduleReconnect();
-      return;
-    }
+  // ---- Preview mode --------------------------------------------------------
+  //
+  // With ?preview=1, this page is embedded as an iframe inside /control (the
+  // "Preview" tab) instead of being the real OBS Browser Source. It never
+  // touches the shared WebSocket/live broadcast state at all - it only
+  // renders whatever the parent window posts to it via postMessage, using
+  // the exact same rendering code as the real live output for an accurate
+  // preview (including the actual background graphic), completely isolated
+  // from what's really on screen.
+  var isPreview = /(?:^|[?&])preview=1(?:&|$)/.test(window.location.search);
 
-    ws.addEventListener("open", function () {
-      reconnectAttempt = 0;
+  if (isPreview) {
+    window.addEventListener("message", function (evt) {
+      if (evt.source !== window.parent || evt.origin !== window.location.origin) return;
+      if (!evt.data || typeof evt.data !== "object") return;
+      handleMessage(evt.data);
     });
+  } else {
+    // ---- WebSocket connection + reconnect with backoff ---------------------
 
-    ws.addEventListener("message", function (evt) {
-      var msg;
+    var RECONNECT_DELAYS = [500, 1000, 2000, 4000, 8000, 10000];
+    var reconnectAttempt = 0;
+    var reconnectTimer = null;
+    var ws = null;
+
+    var wsUrl = function () {
+      var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return protocol + "//" + window.location.host + "/ws";
+    };
+
+    var connect = function () {
+      clearTimeout(reconnectTimer);
       try {
-        msg = JSON.parse(evt.data);
+        ws = new WebSocket(wsUrl());
       } catch (err) {
-        console.warn("[display] malformed message from server:", evt.data);
+        scheduleReconnect();
         return;
       }
-      switch (msg.type) {
-        case "state":
-          applyState(msg);
-          break;
-        case "show":
-          if (msg.slideType && msg.content) applyShow(msg.slideType, msg.content);
-          break;
-        case "update":
-          if (msg.content) applyUpdate(msg.content);
-          break;
-        case "hide":
-          applyHide();
-          break;
-        case "textScale":
-          applyTextScale(msg.scale);
-          break;
-        default:
-          console.warn("[display] unknown message type:", msg.type);
-      }
-    });
 
-    ws.addEventListener("close", function () {
-      scheduleReconnect();
-    });
+      ws.addEventListener("open", function () {
+        reconnectAttempt = 0;
+      });
 
-    ws.addEventListener("error", function () {
-      // "close" fires right after "error" for WebSocket failures, so the
-      // reconnect scheduling there is sufficient — just avoid throwing.
-      try {
-        ws.close();
-      } catch (err) {
-        /* no-op */
-      }
-    });
+      ws.addEventListener("message", function (evt) {
+        var msg;
+        try {
+          msg = JSON.parse(evt.data);
+        } catch (err) {
+          console.warn("[display] malformed message from server:", evt.data);
+          return;
+        }
+        handleMessage(msg);
+      });
+
+      ws.addEventListener("close", function () {
+        scheduleReconnect();
+      });
+
+      ws.addEventListener("error", function () {
+        // "close" fires right after "error" for WebSocket failures, so the
+        // reconnect scheduling there is sufficient — just avoid throwing.
+        try {
+          ws.close();
+        } catch (err) {
+          /* no-op */
+        }
+      });
+    };
+
+    var scheduleReconnect = function () {
+      clearTimeout(reconnectTimer);
+      var delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+      reconnectAttempt++;
+      reconnectTimer = setTimeout(connect, delay);
+    };
+
+    connect();
   }
-
-  function scheduleReconnect() {
-    clearTimeout(reconnectTimer);
-    var delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
-    reconnectAttempt++;
-    reconnectTimer = setTimeout(connect, delay);
-  }
-
-  connect();
 })();
