@@ -20,7 +20,7 @@ This document is the shared contract between the server, the `/display` page, th
 
 ## Preview (postMessage, not the WebSocket)
 
-`/control`'s Preview tab embeds `/display/?preview=1` in an iframe. With `?preview=1`, `/display` skips the WebSocket entirely and instead renders whatever the parent window `postMessage`s to it - same message shapes as the WebSocket protocol below (`show`/`update`/`hide`/`textScale`), just delivered via `iframe.contentWindow.postMessage(msg, window.location.origin)` instead of over the wire. This gives a pixel-accurate preview (actual background graphic, actual text sizing) that's completely isolated from the real live broadcast state.
+`/control`'s Preview tab embeds `/display/?preview=1` in an iframe. With `?preview=1`, `/display` skips the WebSocket entirely and instead renders whatever the parent window `postMessage`s to it - same message shapes as the WebSocket protocol below (`show`/`update`/`hide`/`textScale`/`layout`), just delivered via `iframe.contentWindow.postMessage(msg, window.location.origin)` instead of over the wire. This gives a pixel-accurate preview (actual background graphic, actual text sizing, actual box dimensions) that's completely isolated from the real live broadcast state.
 
 ## WebSocket protocol
 
@@ -31,7 +31,7 @@ One shared endpoint: `ws://localhost:3210/ws`. Every `/display` and `/control` p
 ```jsonc
 // Sent immediately on connect, so a late-joining /display (e.g. OBS just started) or a
 // second /control window syncs to current state without asking.
-{ "type": "state", "visible": true, "current": { "slideType": "scripture", "content": { ... } } }
+{ "type": "state", "visible": true, "current": { "slideType": "scripture", "content": { ... } }, "textScale": 1, "layout": { ... } }
 
 // Sent whenever the operator shows a new slide.
 { "type": "show", "slideType": "scripture" | "lyric" | "announcement", "content": { ... } }
@@ -49,6 +49,17 @@ One shared endpoint: `ws://localhost:3210/ws`. Every `/display` and `/control` p
 // too, so late-joining clients (a fresh /display, a second /control window)
 // pick up whatever the last-set value was.
 { "type": "textScale", "scale": 1.2 }
+
+// Sent whenever the operator changes a background/text box dimension.
+// Every field is optional and independent - omitted/null means "use the
+// default" (bgHeightPct specifically means "auto-fit to the background
+// image's real aspect ratio" when null, since that's the normal default
+// rather than a fixed number). Percentages are of the viewport (vw for
+// widths, vh for heights), clamped server-side to 5-200. Included in the
+// initial `state` message too, same reasoning as textScale above. The
+// background box and text box are sized completely independently of each
+// other - resizing one never affects the other.
+{ "type": "layout", "layout": { "bgWidthPct": 100, "bgHeightPct": null, "textWidthPct": 88, "textHeightPct": 28 } }
 ```
 
 `content` shape depends on `slideType`:
@@ -73,6 +84,7 @@ Only `/control` sends these; the server validates then re-broadcasts the corresp
 { "type": "update", "content": { ... } }
 { "type": "hide" }
 { "type": "textScale", "scale": 1.2 }
+{ "type": "layout", "layout": { "bgWidthPct": 100, "bgHeightPct": null, "textWidthPct": 88, "textHeightPct": 28 } }
 ```
 
 `/control`'s `send()` queues any message it can't deliver immediately (socket not `OPEN` - a momentary reconnect, an OBS browser source reload, a server restart) instead of silently dropping it, and flushes the queue in order the moment the socket reopens. The `ws` status indicator in the top bar shows a `(n pending)` count whenever something is queued, so a click during a brief disconnect still ends up on screen once reconnected rather than silently vanishing.
@@ -152,4 +164,4 @@ VideoPsalm's "Compressed" export (`.vpc`) is a plain ZIP archive (deflate) conta
 
 Also exposes background-asset intake: any image/video dropped in `data/backgrounds/` is picked up by `/api/config` and offered in `/control` as a background choice per slide type (scripture vs. lyric vs. announcement each remember their own last-picked background).
 
-Backgrounds are **not** assumed to share one fixed shape — `/display` measures each image's real pixel dimensions on first load (`naturalWidth`/`naturalHeight`) and sizes the lower-third bar to that exact aspect ratio (via CSS `aspect-ratio`), so a scripture background at e.g. 1080×207 and a worship/lyric background at e.g. 1456×285 each render at their own true proportions edge-to-edge, never stretched or cropped into a guessed shape.
+Backgrounds are **not** assumed to share one fixed shape by default — `/display` measures each image's real pixel dimensions on first load (`naturalWidth`/`naturalHeight`) and sizes the background box to that exact aspect ratio (via CSS `aspect-ratio` on `#lt-bg` specifically, not the whole lower-third), so a scripture background at e.g. 1080×207 and a worship/lyric background at e.g. 1456×285 each render at their own true proportions edge-to-edge by default. The operator can override this via the `layout` message above - `#lt-bg` (background) and `#lt-content` (text) are two independently positioned/sized boxes (both anchored bottom-left of the full-screen `.lower-third` wrapper), not one shared box, so resizing one never affects the other.

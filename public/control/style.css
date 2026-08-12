@@ -214,6 +214,61 @@ input[type="text"]:focus, textarea:focus {
   line-height: 1.4;
 }
 
+/* ---- Layout controls (background/text dimensions) ---- */
+
+.layout-controls {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.layout-group {
+  margin-bottom: 12px;
+}
+.layout-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.layout-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.layout-row > span:first-child {
+  flex: none;
+  width: 44px;
+  color: var(--text-dim);
+}
+.layout-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.layout-row input[type="range"]:disabled {
+  opacity: 0.4;
+}
+.layout-value {
+  flex: none;
+  width: 40px;
+  text-align: right;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.layout-checkbox {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.layout-checkbox input { accent-color: var(--accent); }
+.layout-checkbox span { width: auto; flex: 1; }
+#layoutResetBtn {
+  width: 100%;
+  font-size: 12px;
+}
+
 /* ---- Tabs ---- */
 
 #tabs {

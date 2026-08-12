@@ -41,10 +41,11 @@
       wsBackoff = 1000;
       setWsStatus("connected");
       flushPendingQueue();
-      // Push this operator's saved text-size preference so the display (and
-      // any other open control window) picks it up even if the server was
-      // restarted since it was last set.
+      // Push this operator's saved text-size/layout preferences so the
+      // display (and any other open control window) picks them up even if
+      // the server was restarted since they were last set.
       send({ type: "textScale", scale: textScale });
+      send({ type: "layout", layout });
     });
 
     ws.addEventListener("close", () => {
@@ -120,8 +121,11 @@
       renderLiveBanner(msg.visible, msg.current);
       if (msg.visible && msg.current) reconcileLiveState(msg.current);
       if (typeof msg.textScale === "number") syncTextScale(msg.textScale);
+      if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
     } else if (msg.type === "textScale") {
       if (typeof msg.scale === "number") syncTextScale(msg.scale);
+    } else if (msg.type === "layout") {
+      if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
     } else if (msg.type === "show") {
       renderLiveBanner(true, { slideType: msg.slideType, content: msg.content });
       reconcileLiveState({ slideType: msg.slideType, content: msg.content });
@@ -305,8 +309,13 @@
 
   // The preview iframe's own script only starts listening for postMessage
   // once its document has loaded - a message posted before that is simply
-  // lost (not queued), so re-push current state once it's actually ready.
-  previewFrame.addEventListener("load", pushPreview);
+  // lost (not queued), so re-push everything (content, text size, layout)
+  // once it's actually ready, not just the staged content.
+  previewFrame.addEventListener("load", () => {
+    pushPreview();
+    postToPreview({ type: "textScale", scale: textScale });
+    postToPreview({ type: "layout", layout });
+  });
 
   function stage(slideType, content) {
     staged = { slideType, content };
@@ -327,6 +336,85 @@
     if (staged.slideType === "lyric") currentLyricIsLive = true;
     clearStaged();
   });
+
+  // ============================================================
+  // Layout: independent background-box and text-box dimensions. Background
+  // size and text size are deliberately separate controls (per operator
+  // request) so e.g. a bigger background graphic doesn't force bigger text,
+  // or vice versa.
+  // ============================================================
+
+  const LAYOUT_DEFAULTS = { bgWidthPct: 100, bgHeightPct: null, textWidthPct: 88, textHeightPct: 28 };
+
+  const bgWidthRange = document.getElementById("bgWidthRange");
+  const bgWidthValueEl = document.getElementById("bgWidthValue");
+  const bgHeightAutoCheckbox = document.getElementById("bgHeightAutoCheckbox");
+  const bgHeightRange = document.getElementById("bgHeightRange");
+  const bgHeightValueEl = document.getElementById("bgHeightValue");
+  const textWidthRange = document.getElementById("textWidthRange");
+  const textWidthValueEl = document.getElementById("textWidthValue");
+  const textHeightRange = document.getElementById("textHeightRange");
+  const textHeightValueEl = document.getElementById("textHeightValue");
+  const layoutResetBtn = document.getElementById("layoutResetBtn");
+
+  let layout = { ...LAYOUT_DEFAULTS };
+  {
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem("obs-control:layout") || "null");
+    } catch {
+      saved = null;
+    }
+    if (saved && typeof saved === "object") layout = { ...LAYOUT_DEFAULTS, ...saved };
+  }
+
+  function renderLayoutControls() {
+    bgWidthRange.value = layout.bgWidthPct;
+    bgWidthValueEl.textContent = layout.bgWidthPct + "%";
+
+    const autoHeight = layout.bgHeightPct == null;
+    bgHeightAutoCheckbox.checked = autoHeight;
+    bgHeightRange.disabled = autoHeight;
+    bgHeightRange.value = autoHeight ? 28 : layout.bgHeightPct;
+    bgHeightValueEl.textContent = autoHeight ? "auto" : layout.bgHeightPct + "%";
+
+    textWidthRange.value = layout.textWidthPct;
+    textWidthValueEl.textContent = layout.textWidthPct + "%";
+    textHeightRange.value = layout.textHeightPct;
+    textHeightValueEl.textContent = layout.textHeightPct + "%";
+  }
+
+  function pushLayoutToPreview() {
+    postToPreview({ type: "layout", layout });
+  }
+
+  function setLayout(partial) {
+    layout = { ...layout, ...partial };
+    localStorage.setItem("obs-control:layout", JSON.stringify(layout));
+    renderLayoutControls();
+    send({ type: "layout", layout });
+    pushLayoutToPreview();
+  }
+
+  // Reflects a layout that originated elsewhere (server's initial `state`, or
+  // another open /control window) without re-broadcasting.
+  function syncLayout(next) {
+    layout = { ...LAYOUT_DEFAULTS, ...(next || {}) };
+    localStorage.setItem("obs-control:layout", JSON.stringify(layout));
+    renderLayoutControls();
+    pushLayoutToPreview();
+  }
+
+  bgWidthRange.addEventListener("input", () => setLayout({ bgWidthPct: Number(bgWidthRange.value) }));
+  bgHeightRange.addEventListener("input", () => setLayout({ bgHeightPct: Number(bgHeightRange.value) }));
+  bgHeightAutoCheckbox.addEventListener("change", () => {
+    setLayout({ bgHeightPct: bgHeightAutoCheckbox.checked ? null : Number(bgHeightRange.value) });
+  });
+  textWidthRange.addEventListener("input", () => setLayout({ textWidthPct: Number(textWidthRange.value) }));
+  textHeightRange.addEventListener("input", () => setLayout({ textHeightPct: Number(textHeightRange.value) }));
+  layoutResetBtn.addEventListener("click", () => setLayout({ ...LAYOUT_DEFAULTS }));
+
+  renderLayoutControls();
 
   // ============================================================
   // Tabs

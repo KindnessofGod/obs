@@ -115,6 +115,42 @@
       including its real background — nothing here is actually live until you
       hit "Display Live".
     </p>
+
+    <div class="layout-controls">
+      <div class="layout-group">
+        <div class="layout-group-title">Background size</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="bgWidthRange" min="20" max="150" step="1" />
+          <span class="layout-value" id="bgWidthValue">100%</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="bgHeightAutoCheckbox" checked />
+          <span>Auto height (match the image's real shape)</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="bgHeightRange" min="5" max="80" step="1" disabled />
+          <span class="layout-value" id="bgHeightValue">auto</span>
+        </label>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text area size</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="textWidthRange" min="20" max="100" step="1" />
+          <span class="layout-value" id="textWidthValue">88%</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="textHeightRange" min="5" max="80" step="1" />
+          <span class="layout-value" id="textHeightValue">28%</span>
+        </label>
+      </div>
+
+      <button id="layoutResetBtn" type="button">Reset to defaults</button>
+    </div>
   </section>
 
   <script src="app.js"></script>

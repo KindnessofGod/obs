@@ -90,15 +90,25 @@
   // stepping through verses) never re-measures it.
   var bgAspectCache = {};
 
+  // Whether the operator has set a manual background height override (see
+  // applyLayout) — when true, the real image's aspect ratio is not applied,
+  // since an explicit height always wins over auto-fit. currentBgUrl tracks
+  // what's actually showing so applyLayout can re-derive its aspect ratio
+  // (from bgAspectCache) when switching back from manual to auto height.
+  var manualBgHeight = false;
+  var currentBgUrl = null;
+
   function applyBackground(content) {
     var filename = content && content.background;
     if (filename) {
       // Backgrounds are served statically from /backgrounds/<filename> per
       // PROTOCOL.md. Each background is a real graphic at its own designed
-      // pixel size (e.g. a wide, short lower-third bar) — the lower-third
-      // box is sized to match that exact shape (see setBackgroundAspect)
-      // rather than assuming a fixed shape, so nothing is stretched/cropped.
+      // pixel size (e.g. a wide, short lower-third bar) — by default (no
+      // manual override) the box is sized to match that exact shape (see
+      // setBackgroundAspect) rather than assuming a fixed shape, so nothing
+      // is stretched/cropped unless the operator deliberately sets one.
       var url = "/backgrounds/" + filename;
+      currentBgUrl = url;
       ltBg.style.backgroundImage = "url(" + encodeURI(url) + ")";
       ltBg.classList.remove("no-bg");
       setBackgroundAspect(url);
@@ -106,17 +116,18 @@
       // No asset configured for this slide (or none exist yet in
       // data/backgrounds/) — fall back to a plain gradient scrim so the
       // lower third always renders cleanly instead of looking broken.
+      currentBgUrl = null;
       ltBg.style.backgroundImage = "";
       ltBg.classList.add("no-bg");
-      lowerThird.classList.remove("has-bg-aspect");
+      ltBg.classList.remove("has-bg-aspect");
     }
   }
 
   function setBackgroundAspect(url) {
     var cached = bgAspectCache[url];
     if (cached) {
-      lowerThird.style.setProperty("--bg-aspect", cached);
-      lowerThird.classList.add("has-bg-aspect");
+      ltBg.style.setProperty("--bg-aspect", cached);
+      if (!manualBgHeight) ltBg.classList.add("has-bg-aspect");
       return;
     }
     var img = new Image();
@@ -127,11 +138,37 @@
       // Only apply if this background is still the one actually showing —
       // guards against a fast slide-to-slide switch resolving out of order.
       if (ltBg.style.backgroundImage.indexOf(encodeURI(url)) !== -1) {
-        lowerThird.style.setProperty("--bg-aspect", ratio);
-        lowerThird.classList.add("has-bg-aspect");
+        ltBg.style.setProperty("--bg-aspect", ratio);
+        if (!manualBgHeight) ltBg.classList.add("has-bg-aspect");
       }
     };
     img.src = url;
+  }
+
+  // Applies operator-configured dimension overrides. Any field left
+  // null/undefined falls back to the CSS default (see style.css) - a
+  // background height of null specifically means "auto-fit to the real
+  // image", handled via the has-bg-aspect class above rather than a fixed
+  // --bg-height value.
+  function applyLayout(layout) {
+    layout = layout || {};
+    var root = document.documentElement.style;
+
+    root.setProperty("--bg-width", (typeof layout.bgWidthPct === "number" ? layout.bgWidthPct : 100) + "vw");
+    root.setProperty("--text-width", (typeof layout.textWidthPct === "number" ? layout.textWidthPct : 88) + "vw");
+    root.setProperty("--text-height", (typeof layout.textHeightPct === "number" ? layout.textHeightPct : 28) + "vh");
+
+    manualBgHeight = typeof layout.bgHeightPct === "number";
+    if (manualBgHeight) {
+      root.setProperty("--bg-height", layout.bgHeightPct + "vh");
+      ltBg.classList.remove("has-bg-aspect");
+    } else {
+      root.removeProperty("--bg-height");
+      if (currentBgUrl && bgAspectCache[currentBgUrl]) {
+        ltBg.style.setProperty("--bg-aspect", bgAspectCache[currentBgUrl]);
+        ltBg.classList.add("has-bg-aspect");
+      }
+    }
   }
 
   function paint(slideType, content) {
@@ -225,6 +262,7 @@
   function applyState(msg) {
     // Sent on every fresh connection so a late-joining display re-syncs.
     applyTextScale(msg.textScale);
+    applyLayout(msg.layout);
     if (msg.visible && msg.current && msg.current.slideType) {
       currentSlideType = msg.current.slideType;
       showEntrance(msg.current.slideType, msg.current.content);
@@ -253,6 +291,9 @@
         break;
       case "textScale":
         applyTextScale(msg.scale);
+        break;
+      case "layout":
+        applyLayout(msg.layout);
         break;
       default:
         console.warn("[display] unknown message type:", msg.type);

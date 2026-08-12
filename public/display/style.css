@@ -31,27 +31,17 @@ html, body {
 /* ---- Lower-third container -------------------------------------------- */
 
 .lower-third {
+  /* Just a full-screen positioning context now - .lt-bg and .lt-content are
+     independently sized/positioned within it (see below), so the background
+     graphic's dimensions and the text box's dimensions can be set completely
+     separately instead of always sharing one outer box's shape. */
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  /* Fallback shape when no background image is active yet (gradient-scrim
-     mode) or its real dimensions aren't known yet. Once a background loads,
-     app.js measures its natural pixel size and .has-bg-aspect below takes
-     over, so each background graphic renders at its own true proportions
-     instead of being stretched/cropped into an assumed shape. */
-  height: 28vh;
+  inset: 0;
   opacity: 0;
   transform: translateY(3vh);
   transition: opacity 380ms cubic-bezier(0.22, 1, 0.36, 1),
               transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: opacity, transform;
-}
-
-.lower-third.has-bg-aspect {
-  height: auto;
-  aspect-ratio: var(--bg-aspect, auto);
 }
 
 .lower-third.is-visible {
@@ -60,9 +50,8 @@ html, body {
 }
 
 .lt-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   opacity: 1;
   transition: opacity 200ms ease;
 }
@@ -87,10 +76,23 @@ html, body {
 
 .lt-bg {
   position: absolute;
-  inset: 0;
-  background-size: cover;
+  left: 0;
+  bottom: 0;
+  /* Sized independently from .lt-content below - the operator can resize the
+     background graphic without affecting the text box, and vice versa.
+     Defaults to full-width; height defaults to a plain 28vh but is normally
+     overridden by .has-bg-aspect (matches the real image's own proportions)
+     unless the operator sets an explicit manual height. */
+  width: var(--bg-width, 100vw);
+  height: var(--bg-height, 28vh);
+  background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+.lt-bg.has-bg-aspect {
+  height: auto;
+  aspect-ratio: var(--bg-aspect, auto);
 }
 
 .lt-bg.no-bg {
@@ -123,7 +125,11 @@ html, body {
 
 .lt-content {
   position: absolute;
-  inset: 0;
+  left: 0;
+  bottom: 0;
+  /* Sized/positioned independently from .lt-bg above. */
+  width: var(--text-width, 88vw);
+  height: var(--text-height, 28vh);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -134,7 +140,7 @@ html, body {
 }
 
 .lt-content .slide {
-  max-width: 88vw;
+  max-width: 100%;
 }
 
 /* Scripture ---------------------------------------------------------------- */

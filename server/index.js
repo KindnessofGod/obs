@@ -139,8 +139,21 @@ const wss = new WebSocketServer({ server, path: "/ws" });
 
 const TEXT_SCALE_MIN = 0.7;
 const TEXT_SCALE_MAX = 1.6;
+const LAYOUT_PCT_MIN = 5;
+const LAYOUT_PCT_MAX = 200;
+const LAYOUT_FIELDS = ["bgWidthPct", "bgHeightPct", "textWidthPct", "textHeightPct"];
 
-let state = { visible: false, current: null, textScale: 1 };
+function sanitizeLayout(raw) {
+  const layout = {};
+  for (const field of LAYOUT_FIELDS) {
+    if (raw && typeof raw[field] === "number" && isFinite(raw[field])) {
+      layout[field] = Math.min(LAYOUT_PCT_MAX, Math.max(LAYOUT_PCT_MIN, raw[field]));
+    }
+  }
+  return layout;
+}
+
+let state = { visible: false, current: null, textScale: 1, layout: {} };
 
 function broadcast(message) {
   const payload = JSON.stringify(message);
@@ -150,7 +163,15 @@ function broadcast(message) {
 }
 
 wss.on("connection", (ws) => {
-  ws.send(JSON.stringify({ type: "state", visible: state.visible, current: state.current, textScale: state.textScale }));
+  ws.send(
+    JSON.stringify({
+      type: "state",
+      visible: state.visible,
+      current: state.current,
+      textScale: state.textScale,
+      layout: state.layout,
+    })
+  );
 
   ws.on("message", (raw) => {
     let msg;
@@ -160,17 +181,25 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.type === "show" && msg.slideType && msg.content) {
-      state = { visible: true, current: { slideType: msg.slideType, content: msg.content }, textScale: state.textScale };
+      state = {
+        visible: true,
+        current: { slideType: msg.slideType, content: msg.content },
+        textScale: state.textScale,
+        layout: state.layout,
+      };
       broadcast({ type: "show", slideType: msg.slideType, content: msg.content });
     } else if (msg.type === "update" && msg.content && state.current) {
       state.current.content = msg.content;
       broadcast({ type: "update", content: msg.content });
     } else if (msg.type === "hide") {
-      state = { visible: false, current: state.current, textScale: state.textScale };
+      state = { visible: false, current: state.current, textScale: state.textScale, layout: state.layout };
       broadcast({ type: "hide" });
     } else if (msg.type === "textScale" && typeof msg.scale === "number") {
       state.textScale = Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, msg.scale));
       broadcast({ type: "textScale", scale: state.textScale });
+    } else if (msg.type === "layout" && msg.layout && typeof msg.layout === "object") {
+      state.layout = sanitizeLayout(msg.layout);
+      broadcast({ type: "layout", layout: state.layout });
     }
   });
 });

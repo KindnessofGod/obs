@@ -98,7 +98,18 @@ in the Preview tab, and only then commit it.
   hit "Stage", then confirm with **Display Live**.
 - **Preview tab** — shows exactly what's staged, rendered with your real
   background graphic and text size, before it ever touches the
-  projector/stream. This is the "does it look right" check.
+  projector/stream. This is the "does it look right" check. Below the preview,
+  two independent sets of sliders let you resize things by hand:
+  - **Background size** — Width and Height, in case you ever want the
+    background graphic bigger/smaller/stretched. "Auto height" is on by
+    default, which keeps it at the image's own real proportions (no
+    distortion); switch it off to set an exact height yourself.
+  - **Text area size** — Width and Height of the text box, completely
+    separate from the background's size — making the text box bigger doesn't
+    resize the background, and resizing the background doesn't affect the
+    text box.
+  - Both apply live (watch the preview update as you drag) and to the real
+    display too. "Reset to defaults" puts everything back to how it ships.
 - **Display Live** (in the strip below the live banner, visible on every tab)
   — puts whatever's currently staged on screen. Disabled when nothing's
   staged.
