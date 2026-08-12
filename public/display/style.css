@@ -52,15 +52,6 @@ html, body {
 .lt-inner {
   position: absolute;
   inset: 0;
-  opacity: 1;
-  transition: opacity 200ms ease;
-}
-
-/* Used for in-place content swaps ("show" while already visible, or
-   "update") — the whole bar stays put and only the bg+text crossfade,
-   so switching slides never re-triggers the slide-up/fade-in entrance. */
-.lt-inner.is-swapping {
-  opacity: 0;
 }
 
 /* ---- Background layer --------------------------------------------------

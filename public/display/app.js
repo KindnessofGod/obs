@@ -12,7 +12,6 @@
   "use strict";
 
   var lowerThird = document.getElementById("lower-third");
-  var ltInner = document.querySelector(".lt-inner");
   var ltBg = document.getElementById("lt-bg");
   var ltContent = document.getElementById("lt-content");
 
@@ -22,9 +21,7 @@
   // to the next).
   var isVisible = false;
   var hideTimer = null;
-  var swapTimer = null;
 
-  var SWAP_MS = 200; // in-place content/background crossfade duration
   var HIDE_MS = 420; // must be >= the CSS .lower-third transition duration
 
   // ---- Rendering ---------------------------------------------------------
@@ -179,9 +176,7 @@
   // Full entrance: bar slides/fades up from nothing.
   function showEntrance(slideType, content) {
     clearTimeout(hideTimer);
-    clearTimeout(swapTimer);
     paint(slideType, content);
-    ltInner.classList.remove("is-swapping");
     // Ensure the "hidden" starting styles have been applied before we flip
     // to visible, so the transition actually runs.
     lowerThird.classList.remove("is-visible");
@@ -193,20 +188,17 @@
     isVisible = true;
   }
 
-  // In-place swap: bar stays put, background+text crossfade to new content.
-  // Used when a new "show" arrives while already visible, and for "update".
+  // In-place swap: bar stays exactly where it is, content is replaced
+  // directly with no fade/blink - the operator just sees the text (and
+  // background, if it changed) change, nothing goes off and back on. Used
+  // when a new "show" arrives while already visible, and for "update"
+  // (Next/Previous stepping).
   function swapInPlace(slideType, content) {
-    clearTimeout(swapTimer);
-    ltInner.classList.add("is-swapping");
-    swapTimer = setTimeout(function () {
-      paint(slideType, content);
-      ltInner.classList.remove("is-swapping");
-    }, SWAP_MS);
+    paint(slideType, content);
   }
 
   function hide() {
     clearTimeout(hideTimer);
-    clearTimeout(swapTimer);
     lowerThird.classList.remove("is-visible");
     isVisible = false;
     // Clear content only after the exit transition finishes, so nothing
