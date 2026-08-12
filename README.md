@@ -89,6 +89,11 @@ in the Preview tab, and only then commit it.
   updates the preview instead. The row of pill buttons above the search box
   picks **one** translation at a time (KJV, ASV, etc.) — switching translation
   updates whatever verse you currently have selected, live or staged.
+  **Just naming a book jumps straight to it** — type enough of a book's name
+  to be unambiguous (e.g. `jos` for Joshua, or a short form like `jn`) and it
+  auto-stages that book's chapter 1 verse 1 immediately, before you've even
+  finished typing a full reference. Keep typing a chapter/verse as usual to
+  go somewhere more specific.
 - **Songs tab** — type to filter your song list by title, click a song to open
   its slides (Verse 1, Chorus, etc.) and stage the first one automatically.
   Click any slide to stage it, or use Next/Previous — same live-vs-staged

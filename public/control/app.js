@@ -593,10 +593,10 @@
   }
 
   async function searchScripture(query, translationId) {
-    if (!query.trim() || !translationId) return [];
+    if (!query.trim() || !translationId) return { results: [], bookMatch: null };
     const params = new URLSearchParams({ q: query, translations: translationId });
     const res = await fetch("/api/bible/search?" + params.toString());
-    if (!res.ok) return [];
+    if (!res.ok) return { results: [], bookMatch: null };
     return res.json();
   }
 
@@ -627,12 +627,39 @@
   const debouncedScriptureSearch = debounce(runScriptureSearch, 150);
 
   let lastScriptureResults = [];
+  // Tracks the last book we auto-jumped to, so typing more of the same book
+  // name (e.g. "jos" -> "josh" -> "joshua") doesn't keep re-fetching/
+  // re-staging chapter 1 verse 1 on every keystroke once it's already there.
+  let lastBookJump = null;
+
+  // "Speed" search-as-you-type: the instant what's typed unambiguously names
+  // a book (see resolveUniqueBookPrefix server-side), jump straight to its
+  // chapter 1 verse 1 - staged, not live, same as any other fresh selection.
+  // Naturally stops firing once more of a real reference is typed (e.g.
+  // "joshua 3"), since that no longer just names a bare book.
+  async function maybeJumpToBook(bookName) {
+    if (!bookName || bookName === lastBookJump || !selectedTranslation) return;
+    lastBookJump = bookName;
+    try {
+      const result = await fetchVerse(selectedTranslation, bookName, 1, 1);
+      if (!result) return;
+      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
+      currentScriptureIsLive = false;
+      const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
+      stage("scripture", content);
+      renderScriptureNav(content);
+    } catch {
+      // network hiccup; leave whatever's staged untouched
+    }
+  }
 
   async function runScriptureSearch() {
     const query = scriptureSearchEl.value;
-    const results = await searchScripture(query, selectedTranslation);
+    const { results, bookMatch } = await searchScripture(query, selectedTranslation);
     lastScriptureResults = results;
     renderScriptureResults(results);
+    if (bookMatch) maybeJumpToBook(bookMatch);
+    else lastBookJump = null;
     return results;
   }
 

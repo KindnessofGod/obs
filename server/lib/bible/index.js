@@ -9,7 +9,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { resolveBookAlias } = require("./books");
+const { resolveBookAlias, resolveUniqueBookPrefix } = require("./books");
 const esv = require("./esv");
 const apibible = require("./apibible");
 
@@ -315,4 +315,4 @@ async function getVerse(translationId, book, chapter, verse) {
   return null;
 }
 
-module.exports = { init, listTranslations, searchOffline, getVerse };
+module.exports = { init, listTranslations, searchOffline, getVerse, resolveUniqueBookPrefix };

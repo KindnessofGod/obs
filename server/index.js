@@ -31,8 +31,12 @@ app.get("/api/bible/search", (req, res) => {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!q || translationIds.length === 0) return res.json([]);
-  res.json(bible.searchOffline(q, translationIds));
+  // bookMatch: set once the query unambiguously names a book (e.g. "josh"),
+  // even before it's typed out into a full reference - /control uses this to
+  // auto-jump straight to that book's chapter 1 for speed.
+  const bookMatch = bible.resolveUniqueBookPrefix(q);
+  if (!q || translationIds.length === 0) return res.json({ results: [], bookMatch });
+  res.json({ results: bible.searchOffline(q, translationIds), bookMatch });
 });
 
 app.get("/api/bible/verse", async (req, res) => {

@@ -152,9 +152,31 @@ function normalizeSourceBookName(sourceName) {
   return resolved || name;
 }
 
+// For "speed" search-as-you-type: once partial text unambiguously identifies
+// exactly one book, /control auto-jumps to its chapter 1 verse 1 rather than
+// waiting for a full reference. Two ways to match:
+//  1. The typed text is already a complete, known abbreviation (e.g. "jn",
+//     "1cor") - unambiguous by definition, resolves instantly.
+//  2. Otherwise, treat it as the start of a book's full name - if exactly one
+//     canonical book name starts with what's been typed so far, that's it
+//     (e.g. "jos" matches only "Joshua"; "jo" still matches several, so no
+//     jump yet). Naturally stops firing once a chapter/verse number is
+//     appended (e.g. "joshua 3" no longer starts-with-matches "Joshua").
+function resolveUniqueBookPrefix(text) {
+  const trimmed = String(text || "").trim().toLowerCase();
+  if (trimmed.length < 2) return null; // avoid over-eager single-letter triggers
+
+  const exact = resolveBookAlias(trimmed);
+  if (exact) return exact;
+
+  const matches = CANONICAL_BOOKS.filter((book) => book.toLowerCase().startsWith(trimmed));
+  return matches.length === 1 ? matches[0] : null;
+}
+
 module.exports = {
   CANONICAL_BOOKS,
   USFM_CODES,
   resolveBookAlias,
+  resolveUniqueBookPrefix,
   normalizeSourceBookName,
 };
