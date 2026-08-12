@@ -91,6 +91,24 @@ input[type="text"]:focus, textarea:focus {
 }
 #hideBtn:hover { background: var(--danger-hover); }
 
+.text-size-control {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+.text-size-control button {
+  padding: 5px 8px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.text-size-control span {
+  min-width: 32px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .ws-status {
   display: flex;
   align-items: center;

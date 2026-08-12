@@ -34,6 +34,13 @@ One shared endpoint: `ws://localhost:3210/ws`. Every `/display` and `/control` p
 
 // Sent when the operator hides the on-screen text.
 { "type": "hide" }
+
+// Sent whenever the operator changes the global on-screen text size.
+// scale is a multiplier applied to every slide type's font sizes (1 = 100%,
+// clamped server-side to 0.7-1.6). Included in the initial `state` message
+// too, so late-joining clients (a fresh /display, a second /control window)
+// pick up whatever the last-set value was.
+{ "type": "textScale", "scale": 1.2 }
 ```
 
 `content` shape depends on `slideType`:
@@ -57,6 +64,7 @@ Only `/control` sends these; the server validates then re-broadcasts the corresp
 { "type": "show", "slideType": "scripture" | "lyric" | "announcement", "content": { ... } }
 { "type": "update", "content": { ... } }
 { "type": "hide" }
+{ "type": "textScale", "scale": 1.2 }
 ```
 
 ## REST API (used by `/control` for search/lookup; `/display` only uses the WebSocket)
@@ -125,3 +133,5 @@ module.exports = { detectFormat, parseSong, importSongsFromDir };
 ```
 
 Also exposes background-asset intake: any image/video dropped in `data/backgrounds/` is picked up by `/api/config` and offered in `/control` as a background choice per slide type (scripture vs. lyric vs. announcement each remember their own last-picked background).
+
+Backgrounds are **not** assumed to share one fixed shape — `/display` measures each image's real pixel dimensions on first load (`naturalWidth`/`naturalHeight`) and sizes the lower-third bar to that exact aspect ratio (via CSS `aspect-ratio`), so a scripture background at e.g. 1080×207 and a worship/lyric background at e.g. 1456×285 each render at their own true proportions edge-to-edge, never stretched or cropped into a guessed shape.

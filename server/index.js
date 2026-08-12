@@ -134,7 +134,10 @@ const server = app.listen(PORT, () => {
 
 const wss = new WebSocketServer({ server, path: "/ws" });
 
-let state = { visible: false, current: null };
+const TEXT_SCALE_MIN = 0.7;
+const TEXT_SCALE_MAX = 1.6;
+
+let state = { visible: false, current: null, textScale: 1 };
 
 function broadcast(message) {
   const payload = JSON.stringify(message);
@@ -144,7 +147,7 @@ function broadcast(message) {
 }
 
 wss.on("connection", (ws) => {
-  ws.send(JSON.stringify({ type: "state", visible: state.visible, current: state.current }));
+  ws.send(JSON.stringify({ type: "state", visible: state.visible, current: state.current, textScale: state.textScale }));
 
   ws.on("message", (raw) => {
     let msg;
@@ -154,14 +157,17 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.type === "show" && msg.slideType && msg.content) {
-      state = { visible: true, current: { slideType: msg.slideType, content: msg.content } };
+      state = { visible: true, current: { slideType: msg.slideType, content: msg.content }, textScale: state.textScale };
       broadcast({ type: "show", slideType: msg.slideType, content: msg.content });
     } else if (msg.type === "update" && msg.content && state.current) {
       state.current.content = msg.content;
       broadcast({ type: "update", content: msg.content });
     } else if (msg.type === "hide") {
-      state = { visible: false, current: state.current };
+      state = { visible: false, current: state.current, textScale: state.textScale };
       broadcast({ type: "hide" });
+    } else if (msg.type === "textScale" && typeof msg.scale === "number") {
+      state.textScale = Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, msg.scale));
+      broadcast({ type: "textScale", scale: state.textScale });
     }
   });
 });

@@ -11,6 +11,11 @@
   <!-- Always-visible safety control: kills on-screen text from any tab -->
   <div id="topBar">
     <button id="hideBtn" title="Hide on-screen text immediately">HIDE / CLEAR</button>
+    <div id="textSizeControl" class="text-size-control" title="Adjust on-screen text size">
+      <button id="textSizeDownBtn" type="button" aria-label="Decrease text size">A&minus;</button>
+      <span id="textSizeLabel">100%</span>
+      <button id="textSizeUpBtn" type="button" aria-label="Increase text size">A+</button>
+    </div>
     <div id="wsStatus" class="ws-status ws-disconnected">
       <span class="dot"></span><span class="label">connecting…</span>
     </div>

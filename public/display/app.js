@@ -85,21 +85,53 @@
     );
   }
 
+  // Caches each background's real pixel aspect ratio after the first load,
+  // keyed by URL, so re-showing the same background (very common — e.g.
+  // stepping through verses) never re-measures it.
+  var bgAspectCache = {};
+
   function applyBackground(content) {
     var filename = content && content.background;
     if (filename) {
       // Backgrounds are served statically from /backgrounds/<filename> per
-      // PROTOCOL.md. Treated as a pre-shaped 16:9 lower-third graphic and
-      // stretched to fill the bar edge-to-edge.
-      ltBg.style.backgroundImage = "url(" + encodeURI("/backgrounds/" + filename) + ")";
+      // PROTOCOL.md. Each background is a real graphic at its own designed
+      // pixel size (e.g. a wide, short lower-third bar) — the lower-third
+      // box is sized to match that exact shape (see setBackgroundAspect)
+      // rather than assuming a fixed shape, so nothing is stretched/cropped.
+      var url = "/backgrounds/" + filename;
+      ltBg.style.backgroundImage = "url(" + encodeURI(url) + ")";
       ltBg.classList.remove("no-bg");
+      setBackgroundAspect(url);
     } else {
       // No asset configured for this slide (or none exist yet in
       // data/backgrounds/) — fall back to a plain gradient scrim so the
       // lower third always renders cleanly instead of looking broken.
       ltBg.style.backgroundImage = "";
       ltBg.classList.add("no-bg");
+      lowerThird.classList.remove("has-bg-aspect");
     }
+  }
+
+  function setBackgroundAspect(url) {
+    var cached = bgAspectCache[url];
+    if (cached) {
+      lowerThird.style.setProperty("--bg-aspect", cached);
+      lowerThird.classList.add("has-bg-aspect");
+      return;
+    }
+    var img = new Image();
+    img.onload = function () {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      var ratio = img.naturalWidth + " / " + img.naturalHeight;
+      bgAspectCache[url] = ratio;
+      // Only apply if this background is still the one actually showing —
+      // guards against a fast slide-to-slide switch resolving out of order.
+      if (ltBg.style.backgroundImage.indexOf(encodeURI(url)) !== -1) {
+        lowerThird.style.setProperty("--bg-aspect", ratio);
+        lowerThird.classList.add("has-bg-aspect");
+      }
+    };
+    img.src = url;
   }
 
   function paint(slideType, content) {
@@ -184,8 +216,15 @@
     hide();
   }
 
+  function applyTextScale(scale) {
+    if (typeof scale === "number" && isFinite(scale)) {
+      document.documentElement.style.setProperty("--text-scale", scale);
+    }
+  }
+
   function applyState(msg) {
     // Sent on every fresh connection so a late-joining display re-syncs.
+    applyTextScale(msg.textScale);
     if (msg.visible && msg.current && msg.current.slideType) {
       currentSlideType = msg.current.slideType;
       showEntrance(msg.current.slideType, msg.current.content);
@@ -240,6 +279,9 @@
           break;
         case "hide":
           applyHide();
+          break;
+        case "textScale":
+          applyTextScale(msg.scale);
           break;
         default:
           console.warn("[display] unknown message type:", msg.type);

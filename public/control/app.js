@@ -25,6 +25,10 @@
     ws.addEventListener("open", () => {
       wsBackoff = 1000;
       setWsStatus("connected");
+      // Push this operator's saved text-size preference so the display (and
+      // any other open control window) picks it up even if the server was
+      // restarted since it was last set.
+      send({ type: "textScale", scale: textScale });
     });
 
     ws.addEventListener("close", () => {
@@ -87,6 +91,9 @@
     if (msg.type === "state") {
       renderLiveBanner(msg.visible, msg.current);
       if (msg.visible && msg.current) reconcileLiveState(msg.current);
+      if (typeof msg.textScale === "number") syncTextScale(msg.textScale);
+    } else if (msg.type === "textScale") {
+      if (typeof msg.scale === "number") syncTextScale(msg.scale);
     } else if (msg.type === "show") {
       renderLiveBanner(true, { slideType: msg.slideType, content: msg.content });
       reconcileLiveState({ slideType: msg.slideType, content: msg.content });
@@ -242,6 +249,53 @@
     send({ type: "hide" });
     renderLiveBanner(false, null);
   });
+
+  // ============================================================
+  // Text size (global, always available like Hide/Clear — affects
+  // whatever's on screen immediately, and applies to future slides too)
+  // ============================================================
+
+  const TEXT_SCALE_MIN = 0.7;
+  const TEXT_SCALE_MAX = 1.6;
+  const TEXT_SCALE_STEP = 0.1;
+
+  const textSizeLabelEl = document.getElementById("textSizeLabel");
+  const textSizeDownBtn = document.getElementById("textSizeDownBtn");
+  const textSizeUpBtn = document.getElementById("textSizeUpBtn");
+
+  let textScale = 1;
+  {
+    const saved = Number(localStorage.getItem("obs-control:textScale"));
+    if (Number.isFinite(saved) && saved >= TEXT_SCALE_MIN && saved <= TEXT_SCALE_MAX) textScale = saved;
+  }
+
+  function renderTextScale() {
+    textSizeLabelEl.textContent = Math.round(textScale * 100) + "%";
+    textSizeDownBtn.disabled = textScale <= TEXT_SCALE_MIN + 1e-9;
+    textSizeUpBtn.disabled = textScale >= TEXT_SCALE_MAX - 1e-9;
+  }
+
+  function setTextScale(next) {
+    textScale = Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, Math.round(next * 100) / 100));
+    localStorage.setItem("obs-control:textScale", String(textScale));
+    renderTextScale();
+    send({ type: "textScale", scale: textScale });
+  }
+
+  // Reflects a scale that originated elsewhere (server's initial `state`, or
+  // another open /control window) — updates local UI/storage without
+  // re-broadcasting, so two open control windows don't ping-pong each other.
+  function syncTextScale(scale) {
+    if (scale === textScale) return;
+    textScale = scale;
+    localStorage.setItem("obs-control:textScale", String(textScale));
+    renderTextScale();
+  }
+
+  textSizeDownBtn.addEventListener("click", () => setTextScale(textScale - TEXT_SCALE_STEP));
+  textSizeUpBtn.addEventListener("click", () => setTextScale(textScale + TEXT_SCALE_STEP));
+
+  renderTextScale();
 
   // ============================================================
   // Debounce helper

@@ -87,6 +87,9 @@ always visible no matter which tab you're on.
   title/body on the fly and hit "Show now" for something one-off.
 - **Hide / Clear** — kills whatever's currently on screen immediately, from
   any tab. Use this the moment the pastor moves on.
+- **Text size (A− / A+ next to Hide)** — bumps the on-screen text bigger or
+  smaller in 10% steps (70%–160%), applies instantly to whatever's live and
+  to everything you show afterward. Your choice is remembered for next time.
 - **Background** — each tab has its own "Background" dropdown, listing every
   image/video you've dropped into `data/backgrounds/`. Pick one per tab
   (scripture, songs/lyrics, and announcements remember their own choice
