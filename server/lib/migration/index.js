@@ -14,6 +14,7 @@ const { parseOpenSong } = require("./lib/opensong");
 const { parseChordPro } = require("./lib/chordpro");
 const { parsePlainText } = require("./lib/plaintext");
 const { parseVideoPsalmSongbook, looksLikeVideoPsalmSongbook } = require("./lib/videopsalm");
+const { readZipEntries } = require("./lib/zip");
 
 // Default target is the real data/songs directory, as PROTOCOL.md specifies.
 // Overridable via MIGRATION_SONGS_DIR so the fixtures self-test (and any other
@@ -69,18 +70,16 @@ const CHORDPRO_EXTENSIONS = new Set([".cho", ".chordpro", ".chopro", ".crd", ".p
 
 /**
  * Sniffs a song file's format from its content (and, secondarily, its filename).
- * -> "opensong" | "chordpro" | "plaintext" | "videopsalm" | "videopsalm-compressed" | "unknown"
+ * Expects `fileContents` to already be plain text - a .vpc file's binary ZIP
+ * bytes must be extracted first via readSongFileText, which is what
+ * importSongsFromDir/the upload route actually call.
+ * -> "opensong" | "chordpro" | "plaintext" | "videopsalm" | "unknown"
  */
 function detectFormat(fileContents, filename) {
   if (typeof fileContents !== "string") return "unknown";
   const text = fileContents.trim();
 
   const ext = filename ? path.extname(String(filename)).toLowerCase() : "";
-
-  // VideoPsalm's "Compressed" songbook export (.vpc) isn't plain text - we
-  // can't read it here, but we can at least name the problem clearly instead
-  // of feeding raw bytes through the plaintext parser as garbage lyrics.
-  if (ext === ".vpc") return "videopsalm-compressed";
 
   if (!text) return "unknown";
 
@@ -123,10 +122,6 @@ function parseSong(fileContents, format) {
       throw new Error(
         `Cannot parse song: unrecognized format "${format}". Expected one of "opensong", "chordpro", "plaintext", "videopsalm".`
       );
-    case "videopsalm-compressed":
-      throw new Error(
-        'This is a compressed VideoPsalm songbook (.vpc), which can\'t be read as text. In VideoPsalm, re-export the songbook with "Compressed" unchecked so it saves as a plain .json file, then import that instead.'
-      );
     default:
       throw new Error(`Cannot parse song: unsupported format "${format}".`);
   }
@@ -153,6 +148,33 @@ function parseSongs(fileContents, format) {
     }));
   }
   return [parseSong(fileContents, format)];
+}
+
+/**
+ * Reads a song file as text, transparently extracting VideoPsalm's compressed
+ * .vpc export (a plain ZIP containing one JSON entry) first if that's what
+ * it is. Returns { text, filename } - filename is the original for a normal
+ * text file, or the inner ZIP entry's name for a .vpc (so detectFormat sees
+ * the real underlying file, not the outer .vpc name).
+ */
+async function readSongFileText(filePath, filename) {
+  const ext = path.extname(String(filename || filePath)).toLowerCase();
+  if (ext !== ".vpc") {
+    return { text: await fs.promises.readFile(filePath, "utf8"), filename };
+  }
+
+  const buffer = await fs.promises.readFile(filePath);
+  let entries;
+  try {
+    entries = readZipEntries(buffer);
+  } catch (err) {
+    throw new Error(
+      `Could not open this as a VideoPsalm compressed songbook (.vpc): ${err.message}. If this isn't a real VideoPsalm export, or came from a very different version, try re-exporting with "Compressed" unchecked so it saves as a plain .json instead.`
+    );
+  }
+  const jsonEntry = entries.find((e) => /\.json$/i.test(e.name)) || entries[0];
+  if (!jsonEntry) throw new Error("This .vpc archive doesn't contain any files.");
+  return { text: jsonEntry.data.toString("utf8"), filename: jsonEntry.name };
 }
 
 function uniqueId(baseId, takenIds) {
@@ -222,9 +244,9 @@ async function importSongsFromDir(dirPath) {
   for (const file of files) {
     const filePath = path.join(dirPath, file);
     try {
-      const contents = await fs.promises.readFile(filePath, "utf8");
-      const format = detectFormat(contents, file);
-      const songs = parseSongs(contents, format);
+      const { text, filename } = await readSongFileText(filePath, file);
+      const format = detectFormat(text, filename);
+      const songs = parseSongs(text, format);
       imported.push(...writeSongs(songs, takenIds));
     } catch (err) {
       errors.push({ file, reason: err.message });
@@ -234,4 +256,12 @@ async function importSongsFromDir(dirPath) {
   return { imported, errors };
 }
 
-module.exports = { detectFormat, parseSong, parseSongs, writeSongs, loadExistingSongIds, importSongsFromDir };
+module.exports = {
+  detectFormat,
+  parseSong,
+  parseSongs,
+  writeSongs,
+  loadExistingSongIds,
+  readSongFileText,
+  importSongsFromDir,
+};

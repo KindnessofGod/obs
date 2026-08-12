@@ -13,6 +13,10 @@ const path = require("path");
 // that importSongsFromDir(<fixtures dir>) below doesn't also try to "import" this
 // selftest.js script itself as if it were a song file.
 const SONGS_FIXTURES_DIR = path.join(__dirname, "songs");
+// .vpc fixtures live separately (not under songs/) so they aren't swept up by
+// the importSongsFromDir(SONGS_FIXTURES_DIR) aggregate test below - keeps
+// that test's expected counts stable regardless of .vpc coverage added here.
+const VPC_FIXTURES_DIR = path.join(__dirname, "vpc");
 
 // Route importSongsFromDir's writes to a scratch temp dir instead of the real
 // data/songs, then require the module fresh so it picks up the env var.
@@ -61,8 +65,8 @@ async function main() {
     migration.detectFormat(readFixture("videopsalm-batch.json"), "videopsalm-batch.json") === "videopsalm"
   );
   check(
-    "VideoPsalm .vpc (compressed) detected as videopsalm-compressed regardless of content",
-    migration.detectFormat("whatever bytes", "songbook.vpc") === "videopsalm-compressed"
+    "VideoPsalm songbook with raw embedded newlines detected as videopsalm",
+    migration.detectFormat(readFixture("videopsalm-raw-newlines.json"), "videopsalm-raw-newlines.json") === "videopsalm"
   );
   check("Empty content detected as unknown", migration.detectFormat("", "empty.xml") === "unknown");
   check(
@@ -160,14 +164,52 @@ async function main() {
     );
   }
 
-  console.log("\n== parseSong: videopsalm-compressed throws a clear, actionable error ==");
+  console.log("\n== parseSongs: videopsalm (raw embedded newlines, real-export pattern) ==");
+  {
+    // Regression test for a real bug found against an actual church-exported
+    // .vpc: a raw newline sitting *outside* any string (e.g. between "ID:2,"
+    // and the next "Text:" key - just VideoPsalm's own formatting
+    // whitespace) was being blindly folded into a literal "<br>" and
+    // corrupting otherwise-valid structure. Only newlines *inside* a string
+    // value are real content.
+    const songs = migration.parseSongs(readFixture("videopsalm-raw-newlines.json"), "videopsalm");
+    check("one song extracted despite raw embedded + structural newlines", songs.length === 1);
+    check("title parsed correctly", songs[0].title === "Raw Newline Song");
+    check(
+      "raw newlines inside string values recovered as separate lines",
+      songs[0].slides[0].lines.length === 2 &&
+        songs[0].slides[0].lines[0] === "Line one of verse one" &&
+        songs[0].slides[0].lines[1] === "Line two of verse one"
+    );
+    check(
+      "raw newline outside a string (between fields) did not corrupt parsing",
+      songs[0].slides.length === 2 && songs[0].slides[1].lines[0] === "Line one of verse two"
+    );
+  }
+
+  console.log("\n== readSongFileText: .vpc (real ZIP-based compressed VideoPsalm export) ==");
+  {
+    // Confirmed against a real church-exported .vpc: it's a plain ZIP archive
+    // (deflate) containing one JSON entry - not some undocumented proprietary
+    // compression. readSongFileText extracts it transparently so the rest of
+    // the pipeline never has to know the difference from an uncompressed export.
+    const vpcPath = path.join(VPC_FIXTURES_DIR, "videopsalm-compressed.vpc");
+    const { text, filename } = await migration.readSongFileText(vpcPath, "videopsalm-compressed.vpc");
+    check("filename reflects the inner ZIP entry, not the outer .vpc name", filename === "worship-songbook.json");
+    const format = migration.detectFormat(text, filename);
+    check("extracted content is detected as videopsalm", format === "videopsalm");
+    const songs = migration.parseSongs(text, format);
+    check("songs inside the .vpc parse correctly", songs.length === 2 && songs[0].title === "How Great Thou Art");
+  }
+
+  console.log("\n== readSongFileText: corrupted .vpc throws a clear, actionable error ==");
   try {
-    migration.parseSong("whatever", "videopsalm-compressed");
-    check("parseSong throws for videopsalm-compressed", false);
+    await migration.readSongFileText(path.join(VPC_FIXTURES_DIR, "videopsalm-corrupted.vpc"), "videopsalm-corrupted.vpc");
+    check("readSongFileText throws for a corrupted .vpc", false);
   } catch (err) {
     check(
-      "error message tells the operator to re-export uncompressed",
-      err instanceof Error && /compressed/i.test(err.message) && /json/i.test(err.message)
+      "error message clearly explains the .vpc could not be read",
+      err instanceof Error && /\.vpc/i.test(err.message) && /could not open/i.test(err.message)
     );
   }
 
@@ -184,9 +226,10 @@ async function main() {
     const result = await migration.importSongsFromDir(SONGS_FIXTURES_DIR);
 
     // 3 single-song files + 2 songs from videopsalm-songbook.json + 1 song from
-    // videopsalm-batch.json = 6, even though it's only 5 well-formed *files*
-    // (a VideoPsalm songbook file can contain more than one song).
-    check("imported all songs across the 5 well-formed fixture files", result.imported.length === 6);
+    // videopsalm-batch.json + 1 song from videopsalm-raw-newlines.json = 7,
+    // even though it's only 6 well-formed *files* (a VideoPsalm songbook file
+    // can contain more than one song).
+    check("imported all songs across the 6 well-formed fixture files", result.imported.length === 7);
     check(
       "imported ids are as expected",
       [
@@ -196,6 +239,7 @@ async function main() {
         "how-great-thou-art",
         "blessed-assurance",
         "amazing-love",
+        "raw-newline-song",
       ].every((id) => result.imported.includes(id))
     );
     check(
@@ -219,7 +263,7 @@ async function main() {
     // populated from the previous run - re-importing the same titles should append
     // -2 suffixes rather than silently overwrite or crash.
     const result = await migration.importSongsFromDir(SONGS_FIXTURES_DIR);
-    check("second import of same fixtures still imports all 6 songs", result.imported.length === 6);
+    check("second import of same fixtures still imports all 7 songs", result.imported.length === 7);
     check(
       "collisions de-duplicated with -2 suffix",
       [
@@ -229,6 +273,7 @@ async function main() {
         "how-great-thou-art-2",
         "blessed-assurance-2",
         "amazing-love-2",
+        "raw-newline-song-2",
       ].every((id) => result.imported.includes(id))
     );
   }

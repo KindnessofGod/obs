@@ -80,7 +80,7 @@ Only `/control` sends these; the server validates then re-broadcasts the corresp
 ## REST API (used by `/control` for search/lookup; `/display` only uses the WebSocket)
 
 - `GET /api/bible/translations` → `[{ "id": "kjv", "name": "King James Version", "source": "offline" | "esv" | "apibible", "licensed": false }]`
-- `GET /api/bible/search?q=<text>&translations=kjv,web` → instant results for **offline** translations (reference parse like `"jn 3:16"`, `"john 3:16-18"`, or keyword search like `"god so loved"`). Returns `[{ "translation": "kjv", "book": "John", "chapter": 3, "verse": 16, "text": "..." }]`. Must return in well under 200ms for the whole offline Bible.
+- `GET /api/bible/search?q=<text>&translations=kjv,web` → instant results for **offline** translations (reference parse like `"jn 3:16"`, `"john 3:16-18"`, or keyword search like `"god so loved"`). Returns `[{ "translation": "kjv", "book": "John", "chapter": 3, "verse": 16, "text": "..." }]`. Must return in well under 200ms for the whole offline Bible. Keyword search boosts matches in a book whose name the query itself resolves to (e.g. `"joshua"`) above same-tier matches elsewhere (e.g. the person Joshua mentioned in Exodus) - otherwise canonical book order alone decided the tie, not relevance.
 - `GET /api/bible/verse?translation=<id>&book=<book>&chapter=<n>&verse=<n>` → single verse, works for both offline and licensed translations (fetches + caches licensed ones transparently). `{ "translation": "esv", "book": "John", "chapter": 3, "verse": 16, "text": "...", "source": "cache" | "live" | "offline" }`
 - `GET /api/songs` → `[{ "id": "amazing-grace", "title": "Amazing Grace" }]`
 - `GET /api/songs/:id` → full song, see schema below
@@ -136,16 +136,19 @@ Licensed clients (ESV, API.Bible) live under `server/lib/bible/esv.js` and `serv
 
 ```js
 // server/lib/migration/index.js
-function detectFormat(fileContents, filename); // -> "opensong" | "chordpro" | "plaintext" | "videopsalm" | "videopsalm-compressed" | "unknown"
+function detectFormat(fileContents, filename); // fileContents must already be text (see readSongFileText for .vpc) -> "opensong" | "chordpro" | "plaintext" | "videopsalm" | "unknown"
 function parseSong(fileContents, format); // single-song formats only -> { id, title, slides: [{label, lines}] }
 function parseSongs(fileContents, format); // any format, incl. "videopsalm" -> [{ id, title, slides }, ...] (length 1 for single-song formats)
 function loadExistingSongIds(); // -> Set<string> of ids already in data/songs/
 function writeSongs(songs, takenIds); // writes data/songs/<id>.json for each, de-duping against (and mutating) takenIds -> [...ids written]
-async function importSongsFromDir(dirPath); // parses every file in dirPath via parseSongs+writeSongs -> {imported: [...ids], errors: [{file, reason}]}
-module.exports = { detectFormat, parseSong, parseSongs, writeSongs, loadExistingSongIds, importSongsFromDir };
+async function readSongFileText(filePath, filename); // transparently unzips a .vpc first -> { text, filename } (filename is the inner entry's name for a .vpc)
+async function importSongsFromDir(dirPath); // parses every file in dirPath via readSongFileText+parseSongs+writeSongs -> {imported: [...ids], errors: [{file, reason}]}
+module.exports = { detectFormat, parseSong, parseSongs, writeSongs, loadExistingSongIds, readSongFileText, importSongsFromDir };
 ```
 
-`"videopsalm"` is VideoPsalm's own native Songbook export - distinct from the OpenSong/ChordPro/plain-text interchange formats - handled by `server/lib/migration/lib/videopsalm.js`. A single songbook file can contain an entire song library, so it's the one format where `parseSongs` returns more than one entry per file. `"videopsalm-compressed"` is VideoPsalm's compressed `.vpc` export, which isn't readable as text; `parseSong`/`parseSongs` throw a clear error telling the operator to re-export with "Compressed" unchecked rather than silently mangling binary bytes into garbage lyrics.
+`"videopsalm"` is VideoPsalm's own native Songbook export - distinct from the OpenSong/ChordPro/plain-text interchange formats - handled by `server/lib/migration/lib/videopsalm.js`. A single songbook file can contain an entire song library, so it's the one format where `parseSongs` returns more than one entry per file. Verified against a real 132-song `.vpc` export - see its header comment for the JSON-repair details (unquoted keys, raw embedded newlines only inside string values vs. formatting whitespace between fields).
+
+VideoPsalm's "Compressed" export (`.vpc`) is a plain ZIP archive (deflate) containing one JSON entry - confirmed against a real file, not guessed. `server/lib/migration/lib/zip.js` is a minimal dependency-free ZIP reader (End Of Central Directory + Central Directory + `zlib.inflateRawSync`) just for this case. `readSongFileText` is the one place that knows about `.vpc` at all - it extracts the JSON text and returns it with the inner entry's filename, so `detectFormat`/`parseSongs` downstream never need to know whether a file came from a `.vpc` or a plain `.json`.
 
 Also exposes background-asset intake: any image/video dropped in `data/backgrounds/` is picked up by `/api/config` and offered in `/control` as a background choice per slide type (scripture vs. lyric vs. announcement each remember their own last-picked background).
 

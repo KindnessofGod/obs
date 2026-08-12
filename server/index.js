@@ -84,11 +84,13 @@ const upload = multer({
 app.post("/api/songs/import", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "file is required" });
   try {
-    const contents = fs.readFileSync(req.file.path, "utf8");
-    const format = migration.detectFormat(contents, req.file.originalname);
+    // readSongFileText transparently extracts a compressed VideoPsalm .vpc
+    // (a ZIP) into plain text first; anything else just gets read as-is.
+    const { text, filename } = await migration.readSongFileText(req.file.path, req.file.originalname);
+    const format = migration.detectFormat(text, filename);
     // A single file can hold many songs (e.g. a whole VideoPsalm songbook), so
     // this parses/writes a list rather than assuming one song per upload.
-    const songs = migration.parseSongs(contents, format);
+    const songs = migration.parseSongs(text, format);
     const imported = migration.writeSongs(songs, migration.loadExistingSongIds());
     res.json({ imported, errors: [] });
   } catch (err) {

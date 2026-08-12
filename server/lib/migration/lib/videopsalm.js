@@ -33,32 +33,71 @@ const SECTION_WORDS = {
 
 // Fixed vocabulary of VideoPsalm's own field names. Only these are treated as
 // unquoted object keys needing repair, so we never mis-quote a word that
-// merely happens to appear inside real lyric/title text.
+// merely happens to appear inside real lyric/title text. Covers both the
+// Song-level fields (from the FreeShow reference implementation) and the
+// Style/Background sub-object fields confirmed against a real exported
+// songbook (Background, Body, FontName, FontSize, Image, Luminosity,
+// ShowChords, Stretch, TextAlignment, Transition, VerticalAlignment, Video,
+// Wrap).
 const KNOWN_KEYS = [
   "Guid", "IsCompressed", "IsSearchable", "VersionDate", "Text", "ID",
   "Reference", "Verses", "Tag", "Style", "Sequence", "VideoDuration",
   "VerseOrderIndex", "Composer", "Author", "Copyright", "CCLI", "Theme",
   "AudioFile", "Memo1", "Memo2", "Memo3", "Songs", "Abbreviation", "content",
+  "Background", "Body", "FontName", "FontSize", "Image", "Luminosity",
+  "ShowChords", "Stretch", "TextAlignment", "Transition", "VerticalAlignment",
+  "Video", "Wrap",
 ];
 const KEY_RE = new RegExp(`([{,]\\s*)(${KNOWN_KEYS.join("|")})(\\s*:)`, "g");
 
 // ---- JSON repair -----------------------------------------------------------
 
+// Raw (unescaped) line breaks appear throughout a real VideoPsalm export, but
+// only the ones actually inside a string value are meaningful content (a
+// lyric line break) - JSON requires those escaped, so they're folded into a
+// "<br>" marker here (recovered back into real line breaks in
+// linesFromVerseText below). Line breaks *outside* any string are just
+// VideoPsalm's own formatting whitespace between fields (e.g. "{\nText:" or
+// "ID:2,\nText:") - insignificant to JSON and safe to simply drop. Blindly
+// folding *every* raw newline (regardless of whether it's inside a string)
+// corrupts those formatting ones into a bogus literal "<br>" sitting between
+// two object keys, breaking otherwise-valid structure - so this has to track
+// string-open/close state char by char rather than use a blanket regex.
+function foldNewlinesInsideStrings(text) {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      out += ch;
+      continue;
+    }
+    if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++; // treat CRLF as one break
+      if (inString) out += "<br>";
+      continue; // outside a string: drop (insignificant JSON whitespace)
+    }
+    out += ch;
+  }
+  return out;
+}
+
 function repairSongbookJson(raw) {
-  let text = String(raw);
-
-  // Raw line breaks inside a JSON string are invalid JSON - fold them into a
-  // "<br>" marker instead (recovered back into real line breaks once we're
-  // working with the parsed string values, in linesFromVerseText below).
-  text = text
-    .replace(/\{\r?\n/g, "{")
-    .replace(/\}\r?\n/g, "}")
-    .replace(/\r?\n/g, "<br>")
-    .replace(/[\t\v\r\f﻿]/g, "")
-    .replace(/,<br>"/g, ',"');
-
+  let text = foldNewlinesInsideStrings(String(raw));
+  text = text.replace(/[\t\v\f﻿]/g, "");
   text = text.replace(KEY_RE, '$1"$2"$3');
-
   return text;
 }
 

@@ -1,0 +1,6 @@
+{Songs:[{Guid:"AAAAAAAAAAAAAAAAAAAAAA",Verses:[{
+Text:"Line one of verse one
+Line two of verse one"},{ID:2,
+Text:"Line one of verse two
+Line two of verse two"}],Style:{Body:{FontName:"Tahoma",VerticalAlignment:1}},
+Text:"Raw Newline Song"}]}
