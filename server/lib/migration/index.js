@@ -13,6 +13,7 @@ const { slugify } = require("./lib/slugify");
 const { parseOpenSong } = require("./lib/opensong");
 const { parseChordPro } = require("./lib/chordpro");
 const { parsePlainText } = require("./lib/plaintext");
+const { parseVideoPsalmSongbook, looksLikeVideoPsalmSongbook } = require("./lib/videopsalm");
 
 // Default target is the real data/songs directory, as PROTOCOL.md specifies.
 // Overridable via MIGRATION_SONGS_DIR so the fixtures self-test (and any other
@@ -68,14 +69,20 @@ const CHORDPRO_EXTENSIONS = new Set([".cho", ".chordpro", ".chopro", ".crd", ".p
 
 /**
  * Sniffs a song file's format from its content (and, secondarily, its filename).
- * -> "opensong" | "chordpro" | "plaintext" | "unknown"
+ * -> "opensong" | "chordpro" | "plaintext" | "videopsalm" | "videopsalm-compressed" | "unknown"
  */
 function detectFormat(fileContents, filename) {
   if (typeof fileContents !== "string") return "unknown";
   const text = fileContents.trim();
-  if (!text) return "unknown";
 
   const ext = filename ? path.extname(String(filename)).toLowerCase() : "";
+
+  // VideoPsalm's "Compressed" songbook export (.vpc) isn't plain text - we
+  // can't read it here, but we can at least name the problem clearly instead
+  // of feeding raw bytes through the plaintext parser as garbage lyrics.
+  if (ext === ".vpc") return "videopsalm-compressed";
+
+  if (!text) return "unknown";
 
   // XML declaration or a <song> root -> OpenSong, provided it actually has the
   // shape we can parse. Any other XML-ish content is something we don't support.
@@ -83,6 +90,8 @@ function detectFormat(fileContents, filename) {
     return /<song[\s>][\s\S]*<\/song>/i.test(text) ? "opensong" : "unknown";
   }
   if (text.startsWith("<")) return "unknown";
+
+  if (looksLikeVideoPsalmSongbook(text)) return "videopsalm";
 
   if (CHORDPRO_DIRECTIVE_RE.test(text) || CHORDPRO_EXTENSIONS.has(ext)) {
     return "chordpro";
@@ -112,7 +121,11 @@ function parseSong(fileContents, format) {
     case undefined:
     case null:
       throw new Error(
-        `Cannot parse song: unrecognized format "${format}". Expected one of "opensong", "chordpro", "plaintext".`
+        `Cannot parse song: unrecognized format "${format}". Expected one of "opensong", "chordpro", "plaintext", "videopsalm".`
+      );
+    case "videopsalm-compressed":
+      throw new Error(
+        'This is a compressed VideoPsalm songbook (.vpc), which can\'t be read as text. In VideoPsalm, re-export the songbook with "Compressed" unchecked so it saves as a plain .json file, then import that instead.'
       );
     default:
       throw new Error(`Cannot parse song: unsupported format "${format}".`);
@@ -125,6 +138,23 @@ function parseSong(fileContents, format) {
   };
 }
 
+/**
+ * Like parseSong, but for any format - including VideoPsalm's native songbook
+ * format, where a single file can hold an entire library. Always returns an
+ * array of { id, title, slides }: length 1 for the single-song formats,
+ * potentially many for "videopsalm".
+ */
+function parseSongs(fileContents, format) {
+  if (format === "videopsalm") {
+    return parseVideoPsalmSongbook(fileContents).map((song) => ({
+      id: slugify(song.title),
+      title: song.title,
+      slides: song.slides,
+    }));
+  }
+  return [parseSong(fileContents, format)];
+}
+
 function uniqueId(baseId, takenIds) {
   if (!takenIds.has(baseId)) return baseId;
   let n = 2;
@@ -132,10 +162,43 @@ function uniqueId(baseId, takenIds) {
   return `${baseId}-${n}`;
 }
 
+function loadExistingSongIds() {
+  const SONGS_DIR = songsDir();
+  if (!fs.existsSync(SONGS_DIR)) return new Set();
+  return new Set(
+    fs
+      .readdirSync(SONGS_DIR)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => f.slice(0, -".json".length))
+  );
+}
+
 /**
- * Parses every file in dirPath and writes data/songs/<id>.json for each one that
- * parses successfully. Never throws on a per-file problem - those are collected in
- * `errors` so one bad file doesn't abort the whole batch.
+ * Writes each of `songs` (as returned by parseSongs) to data/songs/<id>.json,
+ * de-duplicating against `takenIds` (mutated in place as ids are claimed, so
+ * repeated calls - e.g. one per file in a batch import - never collide with
+ * each other or with what's already on disk). -> [...ids written]
+ */
+function writeSongs(songs, takenIds) {
+  const SONGS_DIR = songsDir();
+  if (!fs.existsSync(SONGS_DIR)) fs.mkdirSync(SONGS_DIR, { recursive: true });
+
+  const written = [];
+  for (const song of songs) {
+    const id = uniqueId(song.id, takenIds);
+    takenIds.add(id);
+    const output = { id, title: song.title, slides: song.slides };
+    fs.writeFileSync(path.join(SONGS_DIR, `${id}.json`), JSON.stringify(output, null, 2));
+    written.push(id);
+  }
+  return written;
+}
+
+/**
+ * Parses every file in dirPath and writes data/songs/<id>.json for each song
+ * found (a VideoPsalm songbook file can yield many). Never throws on a
+ * per-file problem - those are collected in `errors` so one bad file doesn't
+ * abort the whole batch.
  * -> { imported: [...ids], errors: [{file, reason}] }
  */
 async function importSongsFromDir(dirPath) {
@@ -154,31 +217,15 @@ async function importSongsFromDir(dirPath) {
     .map((entry) => entry.name)
     .sort();
 
-  const SONGS_DIR = songsDir();
-  if (!fs.existsSync(SONGS_DIR)) {
-    fs.mkdirSync(SONGS_DIR, { recursive: true });
-  }
-
-  const takenIds = new Set(
-    fs
-      .readdirSync(SONGS_DIR)
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.slice(0, -".json".length))
-  );
+  const takenIds = loadExistingSongIds();
 
   for (const file of files) {
     const filePath = path.join(dirPath, file);
     try {
       const contents = await fs.promises.readFile(filePath, "utf8");
       const format = detectFormat(contents, file);
-      const song = parseSong(contents, format);
-
-      const id = uniqueId(song.id, takenIds);
-      takenIds.add(id);
-
-      const output = { id, title: song.title, slides: song.slides };
-      fs.writeFileSync(path.join(SONGS_DIR, `${id}.json`), JSON.stringify(output, null, 2));
-      imported.push(id);
+      const songs = parseSongs(contents, format);
+      imported.push(...writeSongs(songs, takenIds));
     } catch (err) {
       errors.push({ file, reason: err.message });
     }
@@ -187,4 +234,4 @@ async function importSongsFromDir(dirPath) {
   return { imported, errors };
 }
 
-module.exports = { detectFormat, parseSong, importSongsFromDir };
+module.exports = { detectFormat, parseSong, parseSongs, writeSongs, loadExistingSongIds, importSongsFromDir };

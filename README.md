@@ -134,25 +134,39 @@ in the Announcements tab as a one-off ("compose on the fly").
 
 ## 5. Migrating your songs from VideoPsalm
 
-1. In VideoPsalm, export your songs (VideoPsalm supports exporting in
-   OpenSong-compatible format — check its Import/Export menu). Copy the
-   exported files into a folder, e.g. `C:\Users\you\Desktop\my-songs`.
+Two ways to export from VideoPsalm, both supported directly — you don't need
+to convert anything by hand:
+
+- **VideoPsalm's own Songbook export** (Songbook menu → Export/Backup) — a
+  single `.json` file that can contain your *entire* song library at once.
+  Make sure **"Compressed" is unchecked** when you export — a compressed
+  `.vpc` file isn't readable as text, and importing one will give you a clear
+  error telling you to re-export instead of garbled text.
+- **OpenSong-compatible export** (Import/Export menu) — one file per song, as
+  OpenSong XML, ChordPro, or plain text.
+
+Either way:
+
+1. Copy the exported file(s) into a folder, e.g. `C:\Users\you\Desktop\my-songs`.
 2. In the project folder, run:
    ```
    npm run import:songs -- C:\Users\you\Desktop\my-songs
    ```
-   It reads every file in that folder (OpenSong XML, ChordPro, or plain text
-   all work), parses out the title and verse/chorus structure, and adds each
-   one to your song list. It prints a summary of what imported and flags
+   It reads every file in that folder, detects its format automatically, and
+   adds every song it finds to your song list (a single Songbook file can add
+   dozens of songs in one go). It prints a summary of what imported and flags
    anything it couldn't read so you can fix or re-export that one file.
 3. Repeat any time you get new songs — it's safe to run again, it just adds
-   what's new.
+   what's new (same-titled songs get a `-2` suffix rather than overwriting).
 
-If your VideoPsalm export doesn't match cleanly (this was built and tested
-against the standard OpenSong/ChordPro formats without a real VideoPsalm
-sample file on hand — see `QA_REPORT.md` and the migration agent's notes),
-send/share one exported song file so the parser can be tuned to the exact
-format your VideoPsalm produces.
+The Songbook-format importer was built against VideoPsalm's real JSON export
+structure (verified against the open-source FreeShow project's working
+VideoPsalm importer), but hasn't been tested against a real file from this
+specific installation yet. **Try it on a small handful of songs first**
+before importing your whole library, and check that the lyrics/verse order
+look right in the Songs tab. If something comes out wrong, share the
+problem song's raw JSON entry (or the whole file, if it's not sensitive) and
+it can be tuned to match exactly.
 
 ## 6. Migrating your backgrounds
 
@@ -167,8 +181,9 @@ the "Background" dropdown on each tab of the control panel — see §3.
 - Built and tested for **one laptop, one operator** (per your setup). Not
   designed for multiple operators on separate machines over a network.
 - TPT isn't available (no free API) — see §4.
-- The VideoPsalm song importer was built against VideoPsalm's documented
-  OpenSong/ChordPro/plain-text export formats, not a real sample file from
-  your installation — see §5 if an import doesn't come out right.
+- The VideoPsalm Songbook importer was built against a real open-source
+  reference implementation (not guessed), but not yet verified against a real
+  export from your specific installation/version — see §5 if an import
+  doesn't come out right.
 - See `QA_REPORT.md` for the full adversarial test pass: what was tested,
   what was found, what was fixed, and anything still open.

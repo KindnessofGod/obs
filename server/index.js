@@ -86,10 +86,11 @@ app.post("/api/songs/import", upload.single("file"), async (req, res) => {
   try {
     const contents = fs.readFileSync(req.file.path, "utf8");
     const format = migration.detectFormat(contents, req.file.originalname);
-    const song = migration.parseSong(contents, format);
-    if (!fs.existsSync(SONGS_DIR)) fs.mkdirSync(SONGS_DIR, { recursive: true });
-    fs.writeFileSync(path.join(SONGS_DIR, `${song.id}.json`), JSON.stringify(song, null, 2));
-    res.json({ imported: [song.id], errors: [] });
+    // A single file can hold many songs (e.g. a whole VideoPsalm songbook), so
+    // this parses/writes a list rather than assuming one song per upload.
+    const songs = migration.parseSongs(contents, format);
+    const imported = migration.writeSongs(songs, migration.loadExistingSongIds());
+    res.json({ imported, errors: [] });
   } catch (err) {
     res.status(422).json({ imported: [], errors: [{ file: req.file.originalname, reason: err.message }] });
   } finally {

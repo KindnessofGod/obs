@@ -52,6 +52,18 @@ async function main() {
     "Plain text file detected as plaintext",
     migration.detectFormat(readFixture("it-is-well.txt"), "it-is-well.txt") === "plaintext"
   );
+  check(
+    "VideoPsalm songbook JSON detected as videopsalm",
+    migration.detectFormat(readFixture("videopsalm-songbook.json"), "videopsalm-songbook.json") === "videopsalm"
+  );
+  check(
+    "VideoPsalm batch-wrapped songbook JSON detected as videopsalm",
+    migration.detectFormat(readFixture("videopsalm-batch.json"), "videopsalm-batch.json") === "videopsalm"
+  );
+  check(
+    "VideoPsalm .vpc (compressed) detected as videopsalm-compressed regardless of content",
+    migration.detectFormat("whatever bytes", "songbook.vpc") === "videopsalm-compressed"
+  );
   check("Empty content detected as unknown", migration.detectFormat("", "empty.xml") === "unknown");
   check(
     "Non-song XML (no <song> root) detected as unknown",
@@ -118,6 +130,47 @@ async function main() {
     );
   }
 
+  console.log("\n== parseSongs: videopsalm (single songbook object, multiple songs per file) ==");
+  {
+    const songs = migration.parseSongs(readFixture("videopsalm-songbook.json"), "videopsalm");
+    check("two songs extracted from one songbook file", songs.length === 2);
+    check("first song title parsed", songs[0].title === "How Great Thou Art");
+    check("first song id slugified", songs[0].id === "how-great-thou-art");
+    check("first song has 3 slides from Sequence-ordered Verses", songs[0].slides.length === 3);
+    check(
+      "labels derived from Sequence tokens (Verse 1 / Chorus / Verse 2)",
+      songs[0].slides[0].label === "Verse 1" && songs[0].slides[1].label === "Chorus" && songs[0].slides[2].label === "Verse 2"
+    );
+    check(
+      "short chord brackets stripped, but [x2]-style repeat markers kept",
+      songs[0].slides[1].lines[1] === "How great Thou art, how great Thou art [x2]" &&
+        songs[0].slides[0].lines.every((l) => !/\[[A-G]/.test(l))
+    );
+    check("second song (no Sequence) falls back to numbered Verse labels", songs[1].slides[0].label === "Verse 1");
+  }
+
+  console.log("\n== parseSongs: videopsalm (batch-wrapped, unquoted keys) ==");
+  {
+    const songs = migration.parseSongs(readFixture("videopsalm-batch.json"), "videopsalm");
+    check("one song extracted from the wrapped/unquoted-key batch export", songs.length === 1);
+    check("title parsed despite unquoted JSON keys", songs[0].title === "Amazing Love");
+    check(
+      "<br> line breaks recovered as separate lines",
+      songs[0].slides[0].lines.length === 2 && songs[0].slides[0].lines[0] === "Amazing love, how can it be"
+    );
+  }
+
+  console.log("\n== parseSong: videopsalm-compressed throws a clear, actionable error ==");
+  try {
+    migration.parseSong("whatever", "videopsalm-compressed");
+    check("parseSong throws for videopsalm-compressed", false);
+  } catch (err) {
+    check(
+      "error message tells the operator to re-export uncompressed",
+      err instanceof Error && /compressed/i.test(err.message) && /json/i.test(err.message)
+    );
+  }
+
   console.log("\n== parseSong: unknown format throws ==");
   try {
     migration.parseSong("whatever", "unknown");
@@ -130,12 +183,20 @@ async function main() {
   {
     const result = await migration.importSongsFromDir(SONGS_FIXTURES_DIR);
 
-    check("imported the 3 well-formed fixtures", result.imported.length === 3);
+    // 3 single-song files + 2 songs from videopsalm-songbook.json + 1 song from
+    // videopsalm-batch.json = 6, even though it's only 5 well-formed *files*
+    // (a VideoPsalm songbook file can contain more than one song).
+    check("imported all songs across the 5 well-formed fixture files", result.imported.length === 6);
     check(
       "imported ids are as expected",
-      ["amazing-grace", "great-is-thy-faithfulness", "it-is-well-with-my-soul"].every((id) =>
-        result.imported.includes(id)
-      )
+      [
+        "amazing-grace",
+        "great-is-thy-faithfulness",
+        "it-is-well-with-my-soul",
+        "how-great-thou-art",
+        "blessed-assurance",
+        "amazing-love",
+      ].every((id) => result.imported.includes(id))
     );
     check(
       "malformed fixtures reported as errors, not thrown",
@@ -158,12 +219,17 @@ async function main() {
     // populated from the previous run - re-importing the same titles should append
     // -2 suffixes rather than silently overwrite or crash.
     const result = await migration.importSongsFromDir(SONGS_FIXTURES_DIR);
-    check("second import of same fixtures still imports 3 songs", result.imported.length === 3);
+    check("second import of same fixtures still imports all 6 songs", result.imported.length === 6);
     check(
       "collisions de-duplicated with -2 suffix",
-      result.imported.includes("amazing-grace-2") &&
-        result.imported.includes("great-is-thy-faithfulness-2") &&
-        result.imported.includes("it-is-well-with-my-soul-2")
+      [
+        "amazing-grace-2",
+        "great-is-thy-faithfulness-2",
+        "it-is-well-with-my-soul-2",
+        "how-great-thou-art-2",
+        "blessed-assurance-2",
+        "amazing-love-2",
+      ].every((id) => result.imported.includes(id))
     );
   }
 

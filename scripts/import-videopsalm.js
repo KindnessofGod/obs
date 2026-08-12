@@ -4,9 +4,10 @@
 // Usage:
 //   npm run import:songs -- <path-to-folder>
 //
-// Point it at a folder containing songs exported from VideoPsalm (OpenSong XML,
-// ChordPro, or plain text files, one song per file) and it will parse each one and
-// write data/songs/<id>.json for it.
+// Point it at a folder containing songs exported from VideoPsalm - either its own
+// native Songbook JSON export (one file can contain the whole library), or OpenSong
+// XML / ChordPro / plain text files (one song per file) - and it will parse each
+// one and write data/songs/<id>.json per song found.
 
 const path = require("path");
 const fs = require("fs");

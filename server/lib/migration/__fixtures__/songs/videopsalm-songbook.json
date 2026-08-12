@@ -1,0 +1,25 @@
+{
+  "Guid": "11111111-1111-1111-1111-111111111111",
+  "Text": "My Songbook",
+  "Songs": [
+    {
+      "Guid": "22222222-2222-2222-2222-222222222222",
+      "Text": "How Great Thou Art",
+      "Sequence": "V1 C V2 C",
+      "Verses": [
+        { "Tag": 1, "ID": 1, "Text": "O Lord my [G]God, when I in awesome wonder<br>Consider all the [C]worlds Thy hands have made" },
+        { "Tag": 2, "ID": 2, "Text": "Then sings my [G]soul, my Savior God, to Thee<br>How great Thou [D]art, how great Thou art [x2]" },
+        { "Tag": 1, "ID": 3, "Text": "And when I think that God, His Son not sparing<br>Sent Him to die, I scarce can take it in" }
+      ],
+      "Author": "Stuart K. Hine"
+    },
+    {
+      "Guid": "33333333-3333-3333-3333-333333333333",
+      "Text": "Blessed Assurance",
+      "Sequence": "",
+      "Verses": [
+        { "Tag": 1, "ID": 1, "Text": "Blessed assurance, Jesus is mine<br>Oh, what a foretaste of glory divine" }
+      ]
+    }
+  ]
+}

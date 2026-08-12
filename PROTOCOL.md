@@ -126,11 +126,16 @@ Licensed clients (ESV, API.Bible) live under `server/lib/bible/esv.js` and `serv
 
 ```js
 // server/lib/migration/index.js
-function detectFormat(fileContents, filename); // -> "opensong" | "chordpro" | "plaintext" | "unknown"
-function parseSong(fileContents, format); // -> { title, slides: [{label, lines}] }
-async function importSongsFromDir(dirPath); // parses every file in dirPath, writes data/songs/<id>.json, -> {imported: [...ids], errors: [{file, reason}]}
-module.exports = { detectFormat, parseSong, importSongsFromDir };
+function detectFormat(fileContents, filename); // -> "opensong" | "chordpro" | "plaintext" | "videopsalm" | "videopsalm-compressed" | "unknown"
+function parseSong(fileContents, format); // single-song formats only -> { id, title, slides: [{label, lines}] }
+function parseSongs(fileContents, format); // any format, incl. "videopsalm" -> [{ id, title, slides }, ...] (length 1 for single-song formats)
+function loadExistingSongIds(); // -> Set<string> of ids already in data/songs/
+function writeSongs(songs, takenIds); // writes data/songs/<id>.json for each, de-duping against (and mutating) takenIds -> [...ids written]
+async function importSongsFromDir(dirPath); // parses every file in dirPath via parseSongs+writeSongs -> {imported: [...ids], errors: [{file, reason}]}
+module.exports = { detectFormat, parseSong, parseSongs, writeSongs, loadExistingSongIds, importSongsFromDir };
 ```
+
+`"videopsalm"` is VideoPsalm's own native Songbook export - distinct from the OpenSong/ChordPro/plain-text interchange formats - handled by `server/lib/migration/lib/videopsalm.js`. A single songbook file can contain an entire song library, so it's the one format where `parseSongs` returns more than one entry per file. `"videopsalm-compressed"` is VideoPsalm's compressed `.vpc` export, which isn't readable as text; `parseSong`/`parseSongs` throw a clear error telling the operator to re-export with "Compressed" unchecked rather than silently mangling binary bytes into garbage lyrics.
 
 Also exposes background-asset intake: any image/video dropped in `data/backgrounds/` is picked up by `/api/config` and offered in `/control` as a background choice per slide type (scripture vs. lyric vs. announcement each remember their own last-picked background).
 
