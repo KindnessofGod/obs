@@ -144,9 +144,26 @@
   // so navigation buttons work no matter who set the current slide.
   function reconcileLiveState(current) {
     if (current.slideType === "scripture") {
+      // If this is just our own "show"/"update" echoing back (the server
+      // broadcasts to every client, including the sender), currentScripture
+      // already correctly tracks the full parts array - re-deriving it from
+      // content.text here would be wrong, since content.text is only the
+      // CURRENT PART's (possibly truncated) text, not the original full
+      // verse, so re-splitting it can't recover how many parts there really are.
+      if (isLocallyTrackedScripture(current.content)) {
+        currentScriptureIsLive = true;
+        return;
+      }
       const parsed = parseReference(current.content.reference);
       if (parsed) {
-        currentScripture = { translation: current.content.translation, ...parsed };
+        // Best-effort reconstruction for a verse driven live by another
+        // window: content.text is only the live part, so re-splitting it
+        // can under-count the parts - not perfect, but Prev/Next still
+        // works correctly for the verse-to-verse case either way.
+        const partMatch = /\((\d+)\/(\d+)\)\s*$/.exec(current.content.reference || "");
+        const parts = splitTextIntoParts(current.content.text);
+        const partIndex = partMatch ? Math.max(0, Math.min(parts.length - 1, Number(partMatch[1]) - 1)) : 0;
+        currentScripture = { translation: current.content.translation, ...parsed, parts, partIndex };
         currentScriptureIsLive = true;
         renderScriptureNav(current.content);
       }
@@ -159,10 +176,22 @@
     }
   }
 
+  // True if `content` (from a "show"/"update" echo) is exactly what
+  // currentScripture already has staged/live - i.e. this is our own action
+  // reflecting back, not a change driven by another window.
+  function isLocallyTrackedScripture(content) {
+    if (!currentScripture || !currentScripture.parts) return false;
+    const expected = scriptureContentForPart(currentScripture, currentScripture.parts, currentScripture.partIndex);
+    return expected.reference === content.reference && expected.translation === content.translation && expected.text === content.text;
+  }
+
   function isLocallyTrackedLyric(content) {
-    if (!currentSong || currentSlideIndex < 0) return false;
+    if (!currentSong || currentSlideIndex < 0 || !currentSlideParts) return false;
     const slide = currentSong.slides[currentSlideIndex];
-    return !!slide && currentSong.title === content.songTitle && slide.label === content.slideLabel && JSON.stringify(slide.lines) === JSON.stringify(content.lines);
+    if (!slide || currentSong.title !== content.songTitle) return false;
+    if (stripPartSuffix(content.slideLabel) !== slide.label) return false;
+    const expectedLines = currentSlideParts[currentSlidePartIndex];
+    return JSON.stringify(expectedLines) === JSON.stringify(content.lines);
   }
 
   function escapeHtml(str) {
@@ -507,6 +536,59 @@
   }
 
   // ============================================================
+  // Text splitting: long content -> readable-sized parts, so a very long
+  // verse or song stanza doesn't have to be shrunk down to illegibility on
+  // the projector. Next/Previous step through the parts before advancing to
+  // the actual next verse/slide - see stepVerse/stepSlide below.
+  // ============================================================
+
+  const SCRIPTURE_MAX_CHARS_PER_PART = 200; // roughly a comfortably-readable chunk at the display's default font size
+  const LYRIC_MAX_LINES_PER_PART = 4; // matches typical song "block" sizes
+
+  // Splits prose (a scripture verse) into parts by greedily packing whole
+  // words up to maxChars, so a very long verse (common in OT narrative)
+  // breaks at word boundaries instead of overflowing the text box.
+  function splitTextIntoParts(text, maxChars) {
+    maxChars = maxChars || SCRIPTURE_MAX_CHARS_PER_PART;
+    const trimmed = String(text || "").trim();
+    if (trimmed.length <= maxChars) return [trimmed];
+
+    const words = trimmed.split(/\s+/);
+    const parts = [];
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? current + " " + word : word;
+      if (candidate.length > maxChars && current) {
+        parts.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) parts.push(current);
+    return parts.length ? parts : [trimmed];
+  }
+
+  // Splits a song slide's lines (already broken into natural lines by the
+  // song data) into groups of at most maxLines each.
+  function splitLinesIntoParts(lines, maxLines) {
+    maxLines = maxLines || LYRIC_MAX_LINES_PER_PART;
+    const safeLines = Array.isArray(lines) ? lines : [];
+    if (safeLines.length <= maxLines) return [safeLines];
+    const parts = [];
+    for (let i = 0; i < safeLines.length; i += maxLines) {
+      parts.push(safeLines.slice(i, i + maxLines));
+    }
+    return parts;
+  }
+
+  // Strips a trailing " (N/M)" part-count suffix, e.g. from a reference or
+  // slide label, so matching/parsing logic can work with the base value.
+  function stripPartSuffix(str) {
+    return String(str || "").replace(/\s*\(\d+\/\d+\)\s*$/, "");
+  }
+
+  // ============================================================
   // Scripture tab
   // ============================================================
 
@@ -520,12 +602,23 @@
 
   let translations = [];
   let selectedTranslation = null;
-  let currentScripture = null; // { translation, book, chapter, verse }
+  let currentScripture = null; // { translation, book, chapter, verse, parts, partIndex }
   // Whether currentScripture is what's actually live right now (vs. merely
   // staged/previewed) - determines whether Prev/Next and translation
   // switching push a live update or just restage. A fresh search result is
   // never live until "Display Live" is clicked.
   let currentScriptureIsLive = false;
+
+  // Builds the content for one part of a (possibly split) verse. `ref` needs
+  // book/chapter/verse/translation - either a search result or currentScripture.
+  function scriptureContentForPart(ref, parts, partIndex) {
+    const text = parts[partIndex];
+    const reference =
+      parts.length > 1
+        ? `${ref.book} ${ref.chapter}:${ref.verse} (${partIndex + 1}/${parts.length})`
+        : `${ref.book} ${ref.chapter}:${ref.verse}`;
+    return { reference, translation: ref.translation, text };
+  }
 
   async function loadTranslations() {
     try {
@@ -582,8 +675,9 @@
     try {
       const result = await fetchVerse(translationId, book, chapter, verse);
       if (!result) return;
-      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
-      const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
+      const parts = splitTextIntoParts(result.text);
+      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse, parts, partIndex: 0 };
+      const content = scriptureContentForPart(currentScripture, parts, 0);
       if (currentScriptureIsLive) sendUpdate("scripture", content);
       else stage("scripture", content);
       renderScriptureNav(content);
@@ -643,9 +737,10 @@
     try {
       const result = await fetchVerse(selectedTranslation, bookName, 1, 1);
       if (!result) return;
-      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
+      const parts = splitTextIntoParts(result.text);
+      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse, parts, partIndex: 0 };
       currentScriptureIsLive = false;
-      const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
+      const content = scriptureContentForPart(currentScripture, parts, 0);
       stage("scripture", content);
       renderScriptureNav(content);
     } catch {
@@ -674,12 +769,13 @@
   });
 
   function showScriptureVerse(verse) {
-    currentScripture = { translation: verse.translation, book: verse.book, chapter: verse.chapter, verse: verse.verse };
+    const parts = splitTextIntoParts(verse.text);
+    currentScripture = { translation: verse.translation, book: verse.book, chapter: verse.chapter, verse: verse.verse, parts, partIndex: 0 };
     // A freshly picked search result is always a new selection - stage it
     // for preview/confirmation rather than assuming it should replace
     // whatever's currently live.
     currentScriptureIsLive = false;
-    const content = { reference: `${verse.book} ${verse.chapter}:${verse.verse}`, translation: verse.translation, text: verse.text };
+    const content = scriptureContentForPart(currentScripture, parts, 0);
     stage("scripture", content);
     renderScriptureNav(content);
   }
@@ -699,6 +795,24 @@
 
   async function stepVerse(delta) {
     if (!currentScripture) return;
+
+    // If the current verse is split into parts, step within it first -
+    // only fall through to fetching an actual different verse once we're
+    // off the start/end of the parts. (parts may be absent if currentScripture
+    // came from reconciling another window's live state rather than our own
+    // fetch - treat that the same as "not split".)
+    if (currentScripture.parts && currentScripture.parts.length > 1) {
+      const nextPartIndex = currentScripture.partIndex + delta;
+      if (nextPartIndex >= 0 && nextPartIndex < currentScripture.parts.length) {
+        currentScripture.partIndex = nextPartIndex;
+        const content = scriptureContentForPart(currentScripture, currentScripture.parts, nextPartIndex);
+        if (currentScriptureIsLive) sendUpdate("scripture", content);
+        else stage("scripture", content);
+        renderScriptureNav(content);
+        return;
+      }
+    }
+
     const { translation, book, chapter, verse } = currentScripture;
     let targetChapter = chapter;
     let targetVerse = verse + delta;
@@ -718,8 +832,13 @@
       }
       if (!result) return; // likely end/start of book; leave as-is
 
-      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
-      const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
+      const parts = splitTextIntoParts(result.text);
+      // Stepping backward off the start of a split verse lands on the LAST
+      // part of the previous verse, not its first - feels like continuous
+      // backward reading rather than jumping ahead again.
+      const partIndex = delta < 0 ? parts.length - 1 : 0;
+      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse, parts, partIndex };
+      const content = scriptureContentForPart(currentScripture, parts, partIndex);
       if (currentScriptureIsLive) sendUpdate("scripture", content);
       else stage("scripture", content);
       renderScriptureNav(content);
@@ -734,8 +853,10 @@
   nextVerseBtn.addEventListener("click", () => stepVerse(1));
 
   function parseReference(ref) {
-    // "John 3:16" / "1 John 3:16" -> { book, chapter, verse }
-    const m = /^(.+)\s+(\d+):(\d+)$/.exec(String(ref || "").trim());
+    // "John 3:16" / "1 John 3:16" (optionally with a trailing " (1/2)" part
+    // suffix, stripped first) -> { book, chapter, verse }
+    const cleaned = stripPartSuffix(String(ref || "").trim());
+    const m = /^(.+)\s+(\d+):(\d+)$/.exec(cleaned);
     if (!m) return null;
     return { book: m[1], chapter: Number(m[2]), verse: Number(m[3]) };
   }
@@ -759,10 +880,18 @@
   let songsLoaded = false;
   let currentSong = null; // full song object { id, title, slides }
   let currentSlideIndex = -1;
+  let currentSlideParts = null; // array of line-arrays for currentSong.slides[currentSlideIndex], or null
+  let currentSlidePartIndex = 0;
   let pendingLyricRestore = null; // content from a `state`/`show` we couldn't resolve yet
   // Whether currentSong/currentSlideIndex is what's actually live right now
   // (vs. merely staged/previewed) - same role as currentScriptureIsLive.
   let currentLyricIsLive = false;
+
+  // Builds the content for one part of a (possibly split) slide.
+  function slideContentForPart(slide, parts, partIndex) {
+    const label = parts.length > 1 ? `${slide.label} (${partIndex + 1}/${parts.length})` : slide.label;
+    return { songTitle: currentSong.title, slideLabel: label, lines: parts[partIndex] };
+  }
 
   async function ensureSongsLoaded() {
     if (songsLoaded) return;
@@ -814,6 +943,8 @@
       return;
     }
     currentSlideIndex = -1;
+    currentSlideParts = null;
+    currentSlidePartIndex = 0;
     songDetailEl.hidden = false;
     songDetailTitleEl.textContent = currentSong.title;
     renderSlideList();
@@ -845,18 +976,24 @@
       return;
     }
     const slide = currentSong.slides[currentSlideIndex];
-    currentSlideLabelEl.textContent = slide ? `${currentSlideIndex + 1}/${currentSong.slides.length} — ${slide.label}` : "";
+    if (!slide) {
+      currentSlideLabelEl.textContent = "";
+      return;
+    }
+    let label = `${currentSlideIndex + 1}/${currentSong.slides.length} — ${slide.label}`;
+    if (currentSlideParts && currentSlideParts.length > 1) label += ` (${currentSlidePartIndex + 1}/${currentSlideParts.length})`;
+    currentSlideLabelEl.textContent = label;
   }
 
-  function slideContent(slide) {
-    return { songTitle: currentSong.title, slideLabel: slide.label, lines: slide.lines };
-  }
-
+  // Selects slide `idx` fresh (always starting at its first part) and stages
+  // or live-updates it depending on `live`.
   function applySlide(idx, live) {
     if (!currentSong || idx < 0 || idx >= currentSong.slides.length) return;
     currentSlideIndex = idx;
     const slide = currentSong.slides[idx];
-    const content = slideContent(slide);
+    currentSlideParts = splitLinesIntoParts(slide.lines);
+    currentSlidePartIndex = 0;
+    const content = slideContentForPart(slide, currentSlideParts, 0);
     if (live) sendUpdate("lyric", content);
     else stage("lyric", content);
     renderSlideList();
@@ -869,18 +1006,41 @@
     applySlide(idx, false);
   }
 
-  // Prev/Next continues whatever's already true: keeps a live reading
-  // moving in real time, or keeps browsing a staged/previewed song silently.
-  function stepSlide(idx) {
-    applySlide(idx, currentLyricIsLive);
+  // Prev/Next: steps within the current slide's parts first (if split),
+  // only advancing to an actual different slide once off the start/end of
+  // the parts - keeps whatever was already true (live update vs. restage).
+  function stepSlide(delta) {
+    if (!currentSong || currentSlideIndex < 0) return;
+
+    if (currentSlideParts && currentSlideParts.length > 1) {
+      const nextPart = currentSlidePartIndex + delta;
+      if (nextPart >= 0 && nextPart < currentSlideParts.length) {
+        currentSlidePartIndex = nextPart;
+        const slide = currentSong.slides[currentSlideIndex];
+        const content = slideContentForPart(slide, currentSlideParts, nextPart);
+        if (currentLyricIsLive) sendUpdate("lyric", content);
+        else stage("lyric", content);
+        renderSlideList();
+        return;
+      }
+    }
+
+    const targetIdx = currentSlideIndex + delta;
+    if (targetIdx < 0 || targetIdx >= currentSong.slides.length) return;
+    currentSlideIndex = targetIdx;
+    const slide = currentSong.slides[targetIdx];
+    currentSlideParts = splitLinesIntoParts(slide.lines);
+    // Stepping backward off the start of a split slide lands on its LAST
+    // part, matching the equivalent scripture behavior.
+    currentSlidePartIndex = delta < 0 ? currentSlideParts.length - 1 : 0;
+    const content = slideContentForPart(slide, currentSlideParts, currentSlidePartIndex);
+    if (currentLyricIsLive) sendUpdate("lyric", content);
+    else stage("lyric", content);
+    renderSlideList();
   }
 
-  prevSlideBtn.addEventListener("click", () => {
-    if (currentSong && currentSlideIndex > 0) stepSlide(currentSlideIndex - 1);
-  });
-  nextSlideBtn.addEventListener("click", () => {
-    if (currentSong && currentSlideIndex < currentSong.slides.length - 1) stepSlide(currentSlideIndex + 1);
-  });
+  prevSlideBtn.addEventListener("click", () => stepSlide(-1));
+  nextSlideBtn.addEventListener("click", () => stepSlide(1));
 
   // Best-effort reconstruction of "which slide of which song is live" after a
   // reload or when another /control window drives the change.
@@ -896,11 +1056,19 @@
       .then((song) => {
         if (!song) return;
         currentSong = song;
-        const idx = song.slides.findIndex(
-          (sl) => sl.label === content.slideLabel && JSON.stringify(sl.lines) === JSON.stringify(content.lines)
-        );
-        currentSlideIndex = idx >= 0 ? idx : -1;
-        currentLyricIsLive = idx >= 0;
+        const targetLabel = stripPartSuffix(content.slideLabel);
+        const idx = song.slides.findIndex((sl) => sl.label === targetLabel);
+        if (idx >= 0) {
+          currentSlideIndex = idx;
+          currentSlideParts = splitLinesIntoParts(song.slides[idx].lines);
+          const partIdx = currentSlideParts.findIndex((p) => JSON.stringify(p) === JSON.stringify(content.lines));
+          currentSlidePartIndex = partIdx >= 0 ? partIdx : 0;
+          currentLyricIsLive = true;
+        } else {
+          currentSlideIndex = -1;
+          currentSlideParts = null;
+          currentSlidePartIndex = 0;
+        }
         songDetailEl.hidden = false;
         songDetailTitleEl.textContent = song.title;
         renderSlideList();

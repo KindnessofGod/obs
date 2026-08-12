@@ -93,12 +93,18 @@ in the Preview tab, and only then commit it.
   to be unambiguous (e.g. `jos` for Joshua, or a short form like `jn`) and it
   auto-stages that book's chapter 1 verse 1 immediately, before you've even
   finished typing a full reference. Keep typing a chapter/verse as usual to
-  go somewhere more specific.
+  go somewhere more specific. **Long verses split automatically** — a verse
+  too long to read comfortably (Esther 8:9, the Bible's longest, is a good
+  test) shows as "Book 8:9 (1/3)" and Next/Previous step through its parts
+  before moving on to the next verse, so the text never has to shrink down
+  to illegibility on the projector.
 - **Songs tab** — type to filter your song list by title, click a song to open
   its slides (Verse 1, Chorus, etc.) and stage the first one automatically.
   Click any slide to stage it, or use Next/Previous — same live-vs-staged
   behavior as Scripture: instant live stepping once it's actually on screen,
-  silent preview updates before that.
+  silent preview updates before that. A slide with more than a handful of
+  lines splits the same way scripture does — "Verse 2 (1/2)" — with
+  Next/Previous stepping through its parts first.
 - **Announcements tab** — click a saved announcement, or type a title/body and
   hit "Stage", then confirm with **Display Live**.
 - **Preview tab** — shows exactly what's staged, rendered with your real
