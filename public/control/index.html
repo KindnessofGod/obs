@@ -30,6 +30,11 @@
 
     <div id="translationPicker" class="translation-picker"></div>
 
+    <div class="bg-picker">
+      <label for="scriptureBgSelect">Background</label>
+      <select id="scriptureBgSelect"></select>
+    </div>
+
     <div id="scriptureNav" class="nav-controls" hidden>
       <button id="prevVerseBtn">&#9664; Prev</button>
       <span id="currentVerseLabel" class="nav-label"></span>
@@ -42,6 +47,12 @@
   <!-- ===================== SONGS ===================== -->
   <section id="tab-songs" class="tab-panel">
     <input id="songSearch" type="text" placeholder="Search songs by title…" autocomplete="off" />
+
+    <div class="bg-picker">
+      <label for="lyricBgSelect">Background</label>
+      <select id="lyricBgSelect"></select>
+    </div>
+
     <div id="songList" class="results-list"></div>
 
     <div id="songDetail" hidden>
@@ -60,6 +71,11 @@
 
   <!-- ===================== ANNOUNCEMENTS ===================== -->
   <section id="tab-announcements" class="tab-panel">
+    <div class="bg-picker">
+      <label for="announcementBgSelect">Background</label>
+      <select id="announcementBgSelect"></select>
+    </div>
+
     <div id="announcementList" class="results-list"></div>
 
     <details id="composeDetails">

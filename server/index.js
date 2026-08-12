@@ -117,8 +117,12 @@ app.post("/api/announcements", (req, res) => {
 
 // ---- Config (non-secret only) ----
 
+const BACKGROUND_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".mp4", ".webm", ".mov"]);
+
 app.get("/api/config", (req, res) => {
-  const backgrounds = fs.existsSync(BACKGROUNDS_DIR) ? fs.readdirSync(BACKGROUNDS_DIR) : [];
+  const backgrounds = fs.existsSync(BACKGROUNDS_DIR)
+    ? fs.readdirSync(BACKGROUNDS_DIR).filter((f) => BACKGROUND_EXTENSIONS.has(path.extname(f).toLowerCase()))
+    : [];
   res.json({ backgrounds });
 });
 

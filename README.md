@@ -76,8 +76,10 @@ always visible no matter which tab you're on.
   for a whole chapter) or keywords (`god so loved`) into the search box.
   Results appear as you type. Click a result — or just press Enter to show
   the top match instantly — and it's live on screen. Use Next/Previous to
-  step through a passage without re-searching. Tick which translations you
-  want to search across at the top of the tab.
+  step through a passage without re-searching. The row of pill buttons above
+  the search box picks **one** translation at a time (KJV, ASV, etc.) — click
+  a different one and both the search and whatever verse is currently loaded
+  instantly switch to it, no re-searching needed.
 - **Songs tab** — type to filter your song list by title, click a song to
   open its slides (Verse 1, Chorus, etc.), click a slide to show it, use
   Next/Previous to step through in order.
@@ -85,6 +87,12 @@ always visible no matter which tab you're on.
   title/body on the fly and hit "Show now" for something one-off.
 - **Hide / Clear** — kills whatever's currently on screen immediately, from
   any tab. Use this the moment the pastor moves on.
+- **Background** — each tab has its own "Background" dropdown, listing every
+  image/video you've dropped into `data/backgrounds/`. Pick one per tab
+  (scripture, songs/lyrics, and announcements remember their own choice
+  separately). If there's only one file in that folder it's auto-selected the
+  first time you open the app, so if you only have one lower-third graphic
+  you likely won't need to touch this at all.
 
 ## 4. Bible translations
 
@@ -146,8 +154,10 @@ format your VideoPsalm produces.
 ## 6. Migrating your backgrounds
 
 See `data/backgrounds/README.md` — short version: copy your VideoPsalm
-background images/videos into the `data/backgrounds` folder, and they show up
-automatically as choices in the control panel.
+background images/videos into the `data/backgrounds` folder (`.png`, `.jpg`,
+`.gif`, `.webp`, `.svg`, `.mp4`, `.webm`, or `.mov`), then restart the server
+(`npm start`) so it picks up the new file. They then show up as choices in
+the "Background" dropdown on each tab of the control panel — see §3.
 
 ## 7. Known limitations
 

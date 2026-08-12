@@ -129,6 +129,97 @@
   }
 
   // ============================================================
+  // Backgrounds (per slide-type, remembered separately)
+  // ============================================================
+
+  let availableBackgrounds = [];
+  let selectedBackgrounds = { scripture: null, lyric: null, announcement: null };
+  let lastContent = { scripture: null, lyric: null, announcement: null };
+
+  const bgSelectEls = {
+    scripture: document.getElementById("scriptureBgSelect"),
+    lyric: document.getElementById("lyricBgSelect"),
+    announcement: document.getElementById("announcementBgSelect"),
+  };
+
+  async function loadBackgrounds() {
+    try {
+      const res = await fetch("/api/config");
+      const config = await res.json();
+      availableBackgrounds = Array.isArray(config.backgrounds) ? config.backgrounds : [];
+    } catch {
+      availableBackgrounds = [];
+    }
+
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem("obs-control:backgrounds") || "null");
+    } catch {
+      saved = null;
+    }
+    selectedBackgrounds = { scripture: null, lyric: null, announcement: null, ...(saved || {}) };
+
+    // Nothing chosen yet but exactly one background exists (the common case,
+    // one custom lower-third graphic) — auto-select it so it works immediately.
+    Object.keys(selectedBackgrounds).forEach((type) => {
+      if (!selectedBackgrounds[type] || !availableBackgrounds.includes(selectedBackgrounds[type])) {
+        selectedBackgrounds[type] = availableBackgrounds.length === 1 ? availableBackgrounds[0] : null;
+      }
+    });
+
+    renderBackgroundPickers();
+  }
+
+  function renderBackgroundPickers() {
+    Object.entries(bgSelectEls).forEach(([type, select]) => {
+      select.innerHTML = "";
+      const noneOpt = document.createElement("option");
+      noneOpt.value = "";
+      noneOpt.textContent = availableBackgrounds.length ? "Default / none" : "No backgrounds found";
+      select.appendChild(noneOpt);
+      availableBackgrounds.forEach((filename) => {
+        const opt = document.createElement("option");
+        opt.value = filename;
+        opt.textContent = filename;
+        select.appendChild(opt);
+      });
+      select.value = selectedBackgrounds[type] || "";
+      select.onchange = () => setBackground(type, select.value);
+    });
+  }
+
+  function setBackground(type, filename) {
+    selectedBackgrounds[type] = filename || null;
+    localStorage.setItem("obs-control:backgrounds", JSON.stringify(selectedBackgrounds));
+    // If this slide type is live right now, re-apply immediately so the
+    // operator sees the new background without having to re-show the content.
+    if (liveSlideType === type && lastContent[type]) {
+      sendUpdate(type, lastContent[type]);
+    }
+  }
+
+  function withBackground(type, content) {
+    const bg = selectedBackgrounds[type];
+    return bg ? { ...content, background: bg } : content;
+  }
+
+  function sendShow(type, content) {
+    lastContent[type] = content;
+    const full = withBackground(type, content);
+    send({ type: "show", slideType: type, content: full });
+    renderLiveBanner(true, { slideType: type, content: full });
+  }
+
+  function sendUpdate(type, content) {
+    lastContent[type] = content;
+    const full = withBackground(type, content);
+    send({ type: "update", content: full });
+    renderLiveBanner(true, { slideType: type, content: full });
+  }
+
+  loadBackgrounds();
+
+  // ============================================================
   // Tabs
   // ============================================================
 
@@ -179,7 +270,7 @@
   const nextVerseBtn = document.getElementById("nextVerseBtn");
 
   let translations = [];
-  let selectedTranslations = new Set();
+  let selectedTranslation = null;
   let currentScripture = null; // { translation, book, chapter, verse }
 
   async function loadTranslations() {
@@ -192,14 +283,12 @@
 
     let saved = null;
     try {
-      saved = JSON.parse(localStorage.getItem("obs-control:selectedTranslations") || "null");
+      saved = localStorage.getItem("obs-control:selectedTranslation");
     } catch {
       saved = null;
     }
 
-    selectedTranslations = new Set(
-      Array.isArray(saved) && saved.length ? saved.filter((id) => translations.some((t) => t.id === id)) : translations.map((t) => t.id)
-    );
+    selectedTranslation = translations.some((t) => t.id === saved) ? saved : translations.length ? translations[0].id : null;
 
     renderTranslationPicker();
   }
@@ -207,32 +296,50 @@
   function renderTranslationPicker() {
     translationPickerEl.innerHTML = "";
     translations.forEach((t) => {
-      const label = document.createElement("label");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.value = t.id;
-      cb.checked = selectedTranslations.has(t.id);
-      cb.addEventListener("change", () => {
-        if (cb.checked) selectedTranslations.add(t.id);
-        else selectedTranslations.delete(t.id);
-        localStorage.setItem("obs-control:selectedTranslations", JSON.stringify([...selectedTranslations]));
-        runScriptureSearch();
-      });
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(" " + t.id.toUpperCase()));
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "translation-btn" + (t.id === selectedTranslation ? " active" : "");
+      btn.appendChild(document.createTextNode(t.id.toUpperCase()));
       if (t.licensed) {
         const tag = document.createElement("span");
         tag.className = "licensed-tag";
         tag.textContent = "licensed";
-        label.appendChild(tag);
+        btn.appendChild(tag);
       }
-      translationPickerEl.appendChild(label);
+      btn.addEventListener("click", () => selectTranslation(t.id));
+      translationPickerEl.appendChild(btn);
     });
   }
 
-  async function searchScripture(query, translationIds) {
-    if (!query.trim() || translationIds.length === 0) return [];
-    const params = new URLSearchParams({ q: query, translations: translationIds.join(",") });
+  function selectTranslation(id) {
+    if (id === selectedTranslation) return;
+    selectedTranslation = id;
+    localStorage.setItem("obs-control:selectedTranslation", id);
+    renderTranslationPicker();
+    if (scriptureSearchEl.value.trim()) runScriptureSearch();
+    // A verse is already picked out (shown or not) — jump it to the newly
+    // selected translation instantly instead of making the operator re-search.
+    if (currentScripture) switchCurrentVerseTranslation(id);
+  }
+
+  async function switchCurrentVerseTranslation(translationId) {
+    if (!currentScripture) return;
+    const { book, chapter, verse } = currentScripture;
+    try {
+      const result = await fetchVerse(translationId, book, chapter, verse);
+      if (!result) return;
+      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
+      const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
+      sendUpdate("scripture", content);
+      renderScriptureNav(content);
+    } catch {
+      // network hiccup on a licensed translation; leave current slide untouched
+    }
+  }
+
+  async function searchScripture(query, translationId) {
+    if (!query.trim() || !translationId) return [];
+    const params = new URLSearchParams({ q: query, translations: translationId });
     const res = await fetch("/api/bible/search?" + params.toString());
     if (!res.ok) return [];
     return res.json();
@@ -268,7 +375,7 @@
 
   async function runScriptureSearch() {
     const query = scriptureSearchEl.value;
-    const results = await searchScripture(query, [...selectedTranslations]);
+    const results = await searchScripture(query, selectedTranslation);
     lastScriptureResults = results;
     renderScriptureResults(results);
     return results;
@@ -287,8 +394,7 @@
   function showScriptureVerse(verse) {
     currentScripture = { translation: verse.translation, book: verse.book, chapter: verse.chapter, verse: verse.verse };
     const content = { reference: `${verse.book} ${verse.chapter}:${verse.verse}`, translation: verse.translation, text: verse.text };
-    send({ type: "show", slideType: "scripture", content });
-    renderLiveBanner(true, { slideType: "scripture", content });
+    sendShow("scripture", content);
     renderScriptureNav(content);
   }
 
@@ -328,8 +434,7 @@
 
       currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse };
       const content = { reference: `${result.book} ${result.chapter}:${result.verse}`, translation: result.translation, text: result.text };
-      send({ type: "update", content });
-      renderLiveBanner(true, { slideType: "scripture", content });
+      sendUpdate("scripture", content);
       renderScriptureNav(content);
     } catch {
       // network hiccup; leave current slide untouched
@@ -463,8 +568,8 @@
     currentSlideIndex = idx;
     const slide = currentSong.slides[idx];
     const content = slideContent(slide);
-    send({ type: isFirstShow ? "show" : "update", slideType: "lyric", content });
-    renderLiveBanner(true, { slideType: "lyric", content });
+    if (isFirstShow) sendShow("lyric", content);
+    else sendUpdate("lyric", content);
     renderSlideList();
   }
 
@@ -544,8 +649,7 @@
 
   function showAnnouncement(a) {
     const content = { title: a.title, body: a.body || "" };
-    send({ type: "show", slideType: "announcement", content });
-    renderLiveBanner(true, { slideType: "announcement", content });
+    sendShow("announcement", content);
   }
 
   document.getElementById("annShowBtn").addEventListener("click", () => {
