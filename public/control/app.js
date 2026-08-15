@@ -190,10 +190,12 @@
         // Best-effort reconstruction for a verse driven live by another
         // window: content.text is only the live part, so re-splitting it
         // can under-count the parts - not perfect, but Prev/Next still
-        // works correctly for the verse-to-verse case either way.
-        const partMatch = /\((\d+)\/(\d+)\)\s*$/.exec(current.content.reference || "");
+        // works correctly for the verse-to-verse case either way. The
+        // sender's own partIndex (not derived from the - now suffix-free -
+        // reference string) tells us which of those re-split parts to land on.
         const parts = splitTextIntoParts(current.content.text);
-        const partIndex = partMatch ? Math.max(0, Math.min(parts.length - 1, Number(partMatch[1]) - 1)) : 0;
+        const partIndex =
+          typeof current.content.partIndex === "number" ? Math.max(0, Math.min(parts.length - 1, current.content.partIndex)) : 0;
         currentScripture = { translation: current.content.translation, ...parsed, parts, partIndex };
         currentScriptureIsLive = true;
         renderScriptureNav(current.content);
@@ -502,6 +504,9 @@
     renderLayoutControls();
     send({ type: "layout", layout });
     pushLayoutToPreview();
+    // Font/width changes affect how many lines a slide's text takes up, so
+    // keep the song slide list's pagination in sync too.
+    if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
   }
 
   // Reflects a layout that originated elsewhere (server's initial `state`, or
@@ -511,6 +516,7 @@
     localStorage.setItem("obs-control:layout", JSON.stringify(layout));
     renderLayoutControls();
     pushLayoutToPreview();
+    if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
   }
 
   bgWidthRange.addEventListener("input", () => setLayout({ bgWidthPct: Number(bgWidthRange.value) }));
@@ -588,6 +594,10 @@
     localStorage.setItem("obs-control:textScale", String(textScale));
     renderTextScale();
     send({ type: "textScale", scale: textScale });
+    // The song slide list's pagination (how many lines fit per page) is
+    // measured against this size - re-render so it stays accurate if the
+    // operator adjusts it mid-service with a song open.
+    if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
   }
 
   // Reflects a scale that originated elsewhere (server's initial `state`, or
@@ -598,6 +608,7 @@
     textScale = scale;
     localStorage.setItem("obs-control:textScale", String(textScale));
     renderTextScale();
+    if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
   }
 
   textSizeDownBtn.addEventListener("click", () => setTextScale(textScale - TEXT_SCALE_STEP));
@@ -817,13 +828,19 @@
 
   // Builds the content for one part of a (possibly split) verse. `ref` needs
   // book/chapter/verse/translation - either a search result or currentScripture.
+  // `reference` is always the clean "Book C:V" form - no "(N/M)" part
+  // indicator - since this is exactly what gets broadcast and rendered on
+  // the projection; partIndex/totalParts travel alongside it so the control
+  // UI can show its own "(N/M)" indicator (see renderScriptureNav) without
+  // that ever leaking onto the screen the congregation sees.
   function scriptureContentForPart(ref, parts, partIndex) {
-    const text = parts[partIndex];
-    const reference =
-      parts.length > 1
-        ? `${ref.book} ${ref.chapter}:${ref.verse} (${partIndex + 1}/${parts.length})`
-        : `${ref.book} ${ref.chapter}:${ref.verse}`;
-    return { reference, translation: ref.translation, text };
+    return {
+      reference: `${ref.book} ${ref.chapter}:${ref.verse}`,
+      translation: ref.translation,
+      text: parts[partIndex],
+      partIndex,
+      totalParts: parts.length,
+    };
   }
 
   async function loadTranslations() {
@@ -1011,7 +1028,10 @@
 
   function renderScriptureNav(content) {
     scriptureNavEl.hidden = false;
-    currentVerseLabelEl.textContent = `${content.reference} (${content.translation.toUpperCase()})`;
+    // The "(N/M)" part indicator is UI-only - content.reference itself stays
+    // clean since it's exactly what gets broadcast to the projection.
+    const partSuffix = content.totalParts > 1 ? ` (${content.partIndex + 1}/${content.totalParts})` : "";
+    currentVerseLabelEl.textContent = `${content.reference}${partSuffix} (${content.translation.toUpperCase()})`;
     highlightCurrentScriptureResult();
   }
 
@@ -1257,9 +1277,12 @@
   let currentLyricIsLive = false;
 
   // Builds the content for one part of a (possibly split) slide.
+  // slideLabel is always the clean slide label - no "(N/M)" part indicator
+  // - since this is exactly what gets broadcast and rendered on the
+  // projection; the control UI builds its own indicator separately (see
+  // updateSlideNavLabel/renderSlideList) from partIndex/totalParts instead.
   function slideContentForPart(slide, parts, partIndex) {
-    const label = parts.length > 1 ? `${slide.label} (${partIndex + 1}/${parts.length})` : slide.label;
-    return { songTitle: currentSong.title, slideLabel: label, lines: parts[partIndex] };
+    return { songTitle: currentSong.title, slideLabel: slide.label, lines: parts[partIndex], partIndex, totalParts: parts.length };
   }
 
   async function ensureSongsLoaded() {
@@ -1331,15 +1354,25 @@
     songListEl.hidden = false;
   });
 
+  // One row per actual on-screen page (not one row per raw slide) - each
+  // slide is pre-split into its 3-line-capped parts, at whatever text
+  // size/font/layout is currently configured, so the operator can click
+  // straight to the exact page they want instead of picking a slide and
+  // then blindly stepping through its parts with Prev/Next/arrows.
   function renderSlideList() {
     slideListEl.innerHTML = "";
-    (currentSong.slides || []).forEach((slide, idx) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "result-item slide-item" + (idx === currentSlideIndex ? " active" : "");
-      item.innerHTML = `<div class="slide-label">${escapeHtml(slide.label)}</div><div class="slide-lines">${escapeHtml(slide.lines.join("\n"))}</div>`;
-      item.addEventListener("click", () => selectSlide(idx));
-      slideListEl.appendChild(item);
+    (currentSong.slides || []).forEach((slide, slideIdx) => {
+      const parts = splitLinesIntoParts(slide.lines);
+      parts.forEach((partLines, partIdx) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        const isActive = slideIdx === currentSlideIndex && partIdx === currentSlidePartIndex;
+        item.className = "result-item slide-item" + (isActive ? " active" : "");
+        const label = parts.length > 1 ? `${slide.label} (${partIdx + 1}/${parts.length})` : slide.label;
+        item.innerHTML = `<div class="slide-label">${escapeHtml(label)}</div><div class="slide-lines">${escapeHtml(partLines.join("\n"))}</div>`;
+        item.addEventListener("click", () => selectSlidePart(slideIdx, partIdx));
+        slideListEl.appendChild(item);
+      });
     });
     updateSlideNavLabel();
   }
@@ -1359,24 +1392,24 @@
     currentSlideLabelEl.textContent = label;
   }
 
-  // Selects slide `idx` fresh (always starting at its first part) and stages
-  // or live-updates it depending on `live`.
-  function applySlide(idx) {
-    if (!currentSong || idx < 0 || idx >= currentSong.slides.length) return;
-    currentSlideIndex = idx;
-    const slide = currentSong.slides[idx];
+  // Selects a specific page (slideIdx/partIdx) fresh and stages or
+  // live-updates it depending on lyricAutoLive - a direct click on any row
+  // in the (now per-page) slide list, or auto-opening a song's first page,
+  // goes straight on screen when "Auto display" is on (the default for
+  // songs), otherwise stages for preview/confirmation.
+  function selectSlidePart(slideIdx, partIdx) {
+    if (!currentSong || slideIdx < 0 || slideIdx >= currentSong.slides.length) return;
+    currentSlideIndex = slideIdx;
+    const slide = currentSong.slides[slideIdx];
     currentSlideParts = splitLinesIntoParts(slide.lines);
-    currentSlidePartIndex = 0;
-    const content = slideContentForPart(slide, currentSlideParts, 0);
+    currentSlidePartIndex = Math.min(Math.max(partIdx, 0), currentSlideParts.length - 1);
+    const content = slideContentForPart(slide, currentSlideParts, currentSlidePartIndex);
     currentLyricIsLive = stageOrGoLive("lyric", content, lyricAutoLive);
     renderSlideList();
   }
 
-  // A direct click on a slide (or auto-opening a song's first slide) is a
-  // fresh selection - goes straight on screen when "Auto display" is on
-  // (the default for songs), otherwise stages for preview/confirmation.
   function selectSlide(idx) {
-    applySlide(idx);
+    selectSlidePart(idx, 0);
   }
 
   // Prev/Next: steps within the current slide's parts first (if split),
