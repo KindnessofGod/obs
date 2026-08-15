@@ -565,6 +565,84 @@ input[type="text"]:focus, textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.song-detail-header button {
+  flex: none;
+  font-size: 12px;
+}
+
+/* ---- Song editor ---- */
+
+.song-edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.song-edit-title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.song-edit-slides {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.song-edit-slide {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  background: var(--bg-alt);
+}
+.song-edit-slide-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.song-edit-slide-head input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.song-edit-slide-actions {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+.song-edit-slide-actions button {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.song-edit-slide textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+.danger-btn {
+  width: 100%;
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.danger-btn:hover {
+  background: var(--danger);
+  color: #fff;
+}
 
 /* ---- Compose form ---- */
 

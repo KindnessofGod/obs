@@ -72,15 +72,59 @@ app.get("/api/songs", (req, res) => {
   res.json(readSongIndex());
 });
 
+// req.params.id is decoded by Express *after* route matching, so an id like
+// "..%2f..%2fpackage" (percent-encoded, matches as a single path segment)
+// decodes to "../../package" and can escape SONGS_DIR via path.join. Guard
+// against that path traversal by rejecting anything that resolves outside it.
+function songFilePath(id) {
+  const file = path.join(SONGS_DIR, `${id}.json`);
+  return file.startsWith(SONGS_DIR + path.sep) ? file : null;
+}
+
+function isValidSlides(slides) {
+  return (
+    Array.isArray(slides) &&
+    slides.every(
+      (s) =>
+        s &&
+        typeof s === "object" &&
+        typeof s.label === "string" &&
+        Array.isArray(s.lines) &&
+        s.lines.every((l) => typeof l === "string")
+    )
+  );
+}
+
 app.get("/api/songs/:id", (req, res) => {
-  const file = path.join(SONGS_DIR, `${req.params.id}.json`);
-  // req.params.id is decoded by Express *after* route matching, so an id like
-  // "..%2f..%2fpackage" (percent-encoded, matches as a single path segment)
-  // decodes to "../../package" and can escape SONGS_DIR via path.join. Guard
-  // against that path traversal by rejecting anything that resolves outside it.
-  if (!file.startsWith(SONGS_DIR + path.sep)) return res.status(400).json({ error: "invalid song id" });
+  const file = songFilePath(req.params.id);
+  if (!file) return res.status(400).json({ error: "invalid song id" });
   if (!fs.existsSync(file)) return res.status(404).json({ error: "song not found" });
   res.json(JSON.parse(fs.readFileSync(file, "utf8")));
+});
+
+app.put("/api/songs/:id", (req, res) => {
+  const file = songFilePath(req.params.id);
+  if (!file) return res.status(400).json({ error: "invalid song id" });
+  if (!fs.existsSync(file)) return res.status(404).json({ error: "song not found" });
+  const { title, slides } = req.body || {};
+  if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "title is required" });
+  if (!isValidSlides(slides)) {
+    return res.status(400).json({ error: "slides must be an array of { label: string, lines: string[] }" });
+  }
+  // id is intentionally NOT re-derived from the (possibly edited) title -
+  // it stays stable across edits so existing references (saved scriptures
+  // don't apply here, but the song's own file/URL) never change underfoot.
+  const song = { id: req.params.id, title: title.trim(), slides };
+  fs.writeFileSync(file, JSON.stringify(song, null, 2));
+  res.json(song);
+});
+
+app.delete("/api/songs/:id", (req, res) => {
+  const file = songFilePath(req.params.id);
+  if (!file) return res.status(400).json({ error: "invalid song id" });
+  if (!fs.existsSync(file)) return res.status(404).json({ error: "song not found" });
+  fs.unlinkSync(file);
+  res.json({ ok: true });
 });
 
 const upload = multer({

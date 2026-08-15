@@ -1243,6 +1243,15 @@
   const prevSlideBtn = document.getElementById("prevSlideBtn");
   const nextSlideBtn = document.getElementById("nextSlideBtn");
   const autoLiveCheckboxSongs = document.getElementById("autoLiveCheckboxSongs");
+  const editSongBtn = document.getElementById("editSongBtn");
+  const songEditPanelEl = document.getElementById("songEditPanel");
+  const songEditTitleInput = document.getElementById("songEditTitleInput");
+  const songEditSlidesEl = document.getElementById("songEditSlides");
+  const addSlideBtn = document.getElementById("addSlideBtn");
+  const saveSongBtn = document.getElementById("saveSongBtn");
+  const cancelEditSongBtn = document.getElementById("cancelEditSongBtn");
+  const deleteSongBtn = document.getElementById("deleteSongBtn");
+  const songEditStatusEl = document.getElementById("songEditStatus");
 
   // "Auto display" for songs - same idea as scripture's, but defaults ON:
   // a song service is fast-paced (click a slide, it needs to be on screen
@@ -1337,6 +1346,7 @@
     currentSlideIndex = -1;
     currentSlideParts = null;
     currentSlidePartIndex = 0;
+    if (editingSlides) closeSongEditor(); // leaving one song's editor open shouldn't leak into the next
     // Hide the (potentially long) song list while viewing a song's lyrics -
     // otherwise it sits above the slide list in the DOM and you'd have to
     // scroll past every song title before reaching the actual lyrics.
@@ -1350,6 +1360,7 @@
   }
 
   document.getElementById("backToSongsBtn").addEventListener("click", () => {
+    if (editingSlides) closeSongEditor();
     songDetailEl.hidden = true;
     songListEl.hidden = false;
   });
@@ -1475,6 +1486,7 @@
           currentSlideParts = null;
           currentSlidePartIndex = 0;
         }
+        if (editingSlides) closeSongEditor(); // another window's action shouldn't leave a stale local edit open
         songListEl.hidden = true;
         songDetailEl.hidden = false;
         songDetailTitleEl.textContent = song.title;
@@ -1482,6 +1494,153 @@
       })
       .catch(() => {});
   }
+
+  // ============================================================
+  // Song editor - rename the song, edit/add/delete/reorder slides, or
+  // delete the whole song. Edits a working copy (editingSlides) so nothing
+  // is written to disk until "Save changes" is explicitly clicked.
+  // ============================================================
+
+  let editingSlides = null; // [{ label, lines: string[] }, ...] while editing, else null
+
+  function openSongEditor() {
+    if (!currentSong) return;
+    editingSlides = currentSong.slides.map((s) => ({ label: s.label, lines: [...s.lines] }));
+    songEditTitleInput.value = currentSong.title;
+    songEditStatusEl.textContent = "";
+    renderSongEditSlides();
+    slideListEl.hidden = true;
+    document.getElementById("slideNav").hidden = true;
+    songEditPanelEl.hidden = false;
+  }
+
+  function closeSongEditor() {
+    editingSlides = null;
+    songEditPanelEl.hidden = true;
+    slideListEl.hidden = false;
+    document.getElementById("slideNav").hidden = false;
+  }
+
+  // Reads whatever's currently typed in each row's label/lines back into
+  // editingSlides - called before any add/move/delete so re-rendering the
+  // list (which rebuilds every row from editingSlides) doesn't discard
+  // in-progress edits to slides other than the one just acted on.
+  function syncEditingSlidesFromDom() {
+    if (!editingSlides) return;
+    songEditSlidesEl.querySelectorAll(".song-edit-slide").forEach((row, idx) => {
+      if (!editingSlides[idx]) return;
+      editingSlides[idx].label = row.querySelector(".song-edit-slide-label").value;
+      editingSlides[idx].lines = row.querySelector(".song-edit-slide-lines").value.split("\n");
+    });
+  }
+
+  function renderSongEditSlides() {
+    songEditSlidesEl.innerHTML = "";
+    editingSlides.forEach((slide, idx) => {
+      const row = document.createElement("div");
+      row.className = "song-edit-slide";
+      row.innerHTML = `
+        <div class="song-edit-slide-head">
+          <input class="song-edit-slide-label" type="text" value="${escapeHtml(slide.label)}" placeholder="Slide label (e.g. Verse 1)" />
+          <div class="song-edit-slide-actions">
+            <button type="button" class="move-up-btn" title="Move up" ${idx === 0 ? "disabled" : ""}>&#9650;</button>
+            <button type="button" class="move-down-btn" title="Move down" ${idx === editingSlides.length - 1 ? "disabled" : ""}>&#9660;</button>
+            <button type="button" class="delete-slide-btn" title="Delete slide">&#10005;</button>
+          </div>
+        </div>
+        <textarea class="song-edit-slide-lines" rows="4" placeholder="One line per row">${escapeHtml(slide.lines.join("\n"))}</textarea>`;
+      row.querySelector(".move-up-btn").addEventListener("click", () => {
+        syncEditingSlidesFromDom();
+        if (idx > 0) [editingSlides[idx - 1], editingSlides[idx]] = [editingSlides[idx], editingSlides[idx - 1]];
+        renderSongEditSlides();
+      });
+      row.querySelector(".move-down-btn").addEventListener("click", () => {
+        syncEditingSlidesFromDom();
+        if (idx < editingSlides.length - 1) [editingSlides[idx + 1], editingSlides[idx]] = [editingSlides[idx], editingSlides[idx + 1]];
+        renderSongEditSlides();
+      });
+      row.querySelector(".delete-slide-btn").addEventListener("click", () => {
+        syncEditingSlidesFromDom();
+        editingSlides.splice(idx, 1);
+        renderSongEditSlides();
+      });
+      songEditSlidesEl.appendChild(row);
+    });
+  }
+
+  editSongBtn.addEventListener("click", openSongEditor);
+  cancelEditSongBtn.addEventListener("click", closeSongEditor);
+
+  addSlideBtn.addEventListener("click", () => {
+    syncEditingSlidesFromDom();
+    editingSlides.push({ label: `Slide ${editingSlides.length + 1}`, lines: [""] });
+    renderSongEditSlides();
+  });
+
+  saveSongBtn.addEventListener("click", async () => {
+    syncEditingSlidesFromDom();
+    const title = songEditTitleInput.value.trim();
+    if (!title) {
+      songEditStatusEl.textContent = "Title can't be empty.";
+      return;
+    }
+    const slides = editingSlides
+      .map((s) => {
+        const lines = s.lines.map((l) => l.trim());
+        while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+        return { label: s.label.trim() || "Untitled", lines };
+      })
+      .filter((s) => s.lines.some((l) => l));
+    saveSongBtn.disabled = true;
+    songEditStatusEl.textContent = "Saving…";
+    try {
+      const res = await fetch(`/api/songs/${encodeURIComponent(currentSong.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, slides }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "save failed");
+      currentSong = await res.json();
+      songsLoaded = false; // force a refresh so the song list picks up a renamed title
+      await ensureSongsLoaded();
+      songDetailTitleEl.textContent = currentSong.title;
+      currentSlideIndex = -1;
+      currentSlideParts = null;
+      currentSlidePartIndex = 0;
+      currentLyricIsLive = false;
+      closeSongEditor();
+      renderSlideList();
+      songEditStatusEl.textContent = "";
+    } catch (err) {
+      songEditStatusEl.textContent = `Could not save: ${err.message}`;
+    } finally {
+      saveSongBtn.disabled = false;
+    }
+  });
+
+  deleteSongBtn.addEventListener("click", async () => {
+    if (!currentSong) return;
+    if (!confirm(`Delete "${currentSong.title}"? This can't be undone.`)) return;
+    deleteSongBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/songs/${encodeURIComponent(currentSong.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "delete failed");
+      songsLoaded = false;
+      await ensureSongsLoaded();
+      currentSong = null;
+      currentSlideIndex = -1;
+      currentSlideParts = null;
+      currentSlidePartIndex = 0;
+      currentLyricIsLive = false;
+      closeSongEditor();
+      songDetailEl.hidden = true;
+      songListEl.hidden = false;
+    } catch (err) {
+      songEditStatusEl.textContent = `Could not delete: ${err.message}`;
+    } finally {
+      deleteSongBtn.disabled = false;
+    }
+  });
 
   // ============================================================
   // Announcements tab

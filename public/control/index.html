@@ -85,6 +85,7 @@
         <div class="song-detail-header">
           <button id="backToSongsBtn" title="Back to song list">&#8592;</button>
           <h3 id="songDetailTitle"></h3>
+          <button id="editSongBtn" title="Edit this song's title and slides">Edit</button>
         </div>
         <div id="slideNav" class="nav-controls">
           <button id="prevSlideBtn">&#9664; Prev</button>
@@ -97,6 +98,23 @@
         </label>
       </div>
       <div id="slideList" class="results-list scrollable-results"></div>
+
+      <div id="songEditPanel" class="song-edit-panel scrollable-results" hidden>
+        <label class="song-edit-title-row">
+          <span>Title</span>
+          <input id="songEditTitleInput" type="text" />
+        </label>
+        <div id="songEditSlides" class="song-edit-slides"></div>
+        <div class="btn-row">
+          <button id="addSlideBtn" type="button">+ Add slide</button>
+        </div>
+        <div class="btn-row">
+          <button id="saveSongBtn" class="primary-btn" type="button">Save changes</button>
+          <button id="cancelEditSongBtn" type="button">Cancel</button>
+        </div>
+        <button id="deleteSongBtn" type="button" class="danger-btn">Delete this song</button>
+        <div id="songEditStatus" class="save-status"></div>
+      </div>
     </div>
   </section>
 
