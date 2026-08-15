@@ -1,0 +1,32 @@
+{
+  "id": "new-song-3",
+  "title": "New song",
+  "slides": [
+    {
+      "label": "Verse 1",
+      "lines": [
+        "Dear Spirit of God",
+        "You are the Holy One",
+        "You are the power of God",
+        "You are the life giverMusic artist merchandise"
+      ]
+    },
+    {
+      "label": "Verse 2",
+      "lines": [
+        "Dear Spirit of God",
+        "You are the righteous One",
+        "The Father of Christ, our Lord",
+        "Of Sovereign majesty"
+      ]
+    },
+    {
+      "label": "Verse 3",
+      "lines": [
+        "Gracious Comforter",
+        "Our Advocate, the intercessor in us",
+        "The revealer of truth"
+      ]
+    }
+  ]
+}

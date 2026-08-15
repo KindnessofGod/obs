@@ -1,0 +1,43 @@
+{
+  "id": "song-of-heaven",
+  "title": "Song Of Heaven",
+  "slides": [
+    {
+      "label": "Verse 1",
+      "lines": [
+        "We raise our voice in praise",
+        "To You Lord our King upon the throne",
+        "You are holy, glorious and wonderful",
+        "Father of love"
+      ]
+    },
+    {
+      "label": "Verse 2",
+      "lines": [
+        "Song of heaven",
+        "You are the song the angels sing",
+        "Lord You are wonderful",
+        "We sing of You in praise",
+        "Jesus, song of heaven"
+      ]
+    },
+    {
+      "label": "Verse 3",
+      "lines": [
+        "Holy holy holy",
+        "Hallelujah",
+        "Worthy worthy worthy",
+        "Jesus, song of heaven"
+      ]
+    },
+    {
+      "label": "Verse 4",
+      "lines": [
+        "Jesus, song of heaven",
+        "Jesus, song of heaven",
+        "Jesus, song of heaven",
+        "Jesus, song of heaven"
+      ]
+    }
+  ]
+}
