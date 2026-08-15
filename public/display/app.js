@@ -142,11 +142,25 @@
     img.src = url;
   }
 
-  // Applies operator-configured dimension overrides. Any field left
+  // Maps the small whitelisted fontFamily keys (validated server-side too -
+  // see sanitizeLayout in server/index.js) to real CSS font stacks. Kept to
+  // fonts that ship with Windows so this works fully offline, no web fonts.
+  var FONT_FAMILY_STACKS = {
+    serif: 'Georgia, "Times New Roman", serif',
+    sans: '-apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+    condensed: '"Arial Narrow", "Segoe UI", sans-serif',
+    rounded: 'Calibri, "Trebuchet MS", sans-serif',
+  };
+  var TEXT_ALIGN_JUSTIFY = { top: "flex-start", middle: "center", bottom: "flex-end" };
+  var TEXT_HALIGN_ITEMS = { left: "flex-start", center: "center", right: "flex-end" };
+
+  // Applies operator-configured dimension/style overrides. Any field left
   // null/undefined falls back to the CSS default (see style.css) - a
   // background height of null specifically means "auto-fit to the real
   // image", handled via the has-bg-aspect class above rather than a fixed
-  // --bg-height value.
+  // --bg-height value. Font family/bold/all-caps/vertical-align similarly
+  // fall back to each slide type's own CSS defaults when unset, rather than
+  // forcing every slide to look the same.
   function applyLayout(layout) {
     layout = layout || {};
     var root = document.documentElement.style;
@@ -166,6 +180,19 @@
         ltBg.classList.add("has-bg-aspect");
       }
     }
+
+    root.setProperty("--content-justify", TEXT_ALIGN_JUSTIFY[layout.textAlign] || TEXT_ALIGN_JUSTIFY.bottom);
+    root.setProperty("--content-align-items", TEXT_HALIGN_ITEMS[layout.textHAlign] || TEXT_HALIGN_ITEMS.left);
+    root.setProperty("--content-text-align", layout.textHAlign || "left");
+
+    var fontStack = FONT_FAMILY_STACKS[layout.fontFamily];
+    if (fontStack) root.setProperty("--content-font-family", fontStack);
+    else root.removeProperty("--content-font-family");
+
+    if (layout.bold) root.setProperty("--content-font-weight", "700");
+    else root.removeProperty("--content-font-weight");
+
+    root.setProperty("--content-text-transform", layout.allCaps ? "uppercase" : "none");
   }
 
   function paint(slideType, content) {

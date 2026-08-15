@@ -123,8 +123,9 @@ html, body {
   height: var(--text-height, 28vh);
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  align-items: flex-start;
+  justify-content: var(--content-justify, flex-end);
+  align-items: var(--content-align-items, flex-start);
+  text-align: var(--content-text-align, left);
   padding: 2vh 6vw 3.4vh 5vw;
   color: #fdfaf2;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75), 0 0px 2px rgba(0, 0, 0, 0.9);
@@ -137,9 +138,10 @@ html, body {
 /* Scripture ---------------------------------------------------------------- */
 
 .slide-scripture .scripture-text {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--content-font-family, Georgia, "Times New Roman", serif);
   font-style: italic;
-  font-weight: 400;
+  font-weight: var(--content-font-weight, 400);
+  text-transform: var(--content-text-transform, none);
   font-size: calc(clamp(24px, 3vw, 46px) * var(--text-scale, 1));
   line-height: 1.35;
   margin-bottom: 1.1vh;
@@ -167,11 +169,39 @@ html, body {
   opacity: 0.85;
 }
 
-/* Lyric ---------------------------------------------------------------- */
+/* Lyric ----------------------------------------------------------------
+   Songs always center their lyrics (both axes) and keep the title/slide-
+   label pinned to the very bottom of the box, regardless of how many lines
+   are showing - deliberately NOT tied to the shared --content-justify/
+   --content-align-items vars that scripture uses, since those are an
+   operator-adjustable position for a single compact block, whereas here the
+   title must stay anchored at the bottom even while the lyric text itself
+   floats to vertical center (most noticeable with just one line: without
+   this, the whole block - lyrics AND title together - would drift up to
+   the middle, dragging the title away from the bottom with it). Filling
+   the full box lets .lyric-lines (flex: 1) claim all the leftover space
+   above the title for its own centering, independent of line count. */
+
+.slide-lyric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  height: 100%;
+  width: 100%;
+}
 
 .slide-lyric .lyric-lines {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  font-family: var(--content-font-family, inherit);
   font-size: calc(clamp(24px, 3.1vw, 48px) * var(--text-scale, 1));
-  font-weight: 600;
+  font-weight: var(--content-font-weight, 600);
+  text-transform: var(--content-text-transform, none);
   line-height: 1.3;
   margin-bottom: 1.1vh;
 }
@@ -181,6 +211,7 @@ html, body {
 }
 
 .slide-lyric .lyric-meta {
+  flex: none;
   display: flex;
   align-items: baseline;
   gap: 0.6em;
@@ -210,8 +241,10 @@ html, body {
 }
 
 .slide-announcement .announcement-body {
+  font-family: var(--content-font-family, inherit);
   font-size: calc(clamp(18px, 2vw, 32px) * var(--text-scale, 1));
-  font-weight: 400;
+  font-weight: var(--content-font-weight, 400);
+  text-transform: var(--content-text-transform, none);
   line-height: 1.4;
 }
 

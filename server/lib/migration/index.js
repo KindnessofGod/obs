@@ -150,20 +150,45 @@ function parseSongs(fileContents, format) {
   return [parseSong(fileContents, format)];
 }
 
+// ZIP local-file-header magic ("PK\x03\x04") / empty-archive magic
+// ("PK\x05\x06"), sniffed from the file's actual bytes rather than trusting
+// its extension - VideoPsalm's "Compressed" Songbook export is a plain ZIP,
+// but export tooling doesn't always give it a .vpc extension (a real church
+// export showed up here saved as plain .json while still being raw ZIP
+// bytes), which silently corrupted the import by reading the archive as text.
+const ZIP_MAGIC_PREFIXES = [
+  Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+  Buffer.from([0x50, 0x4b, 0x05, 0x06]),
+];
+
+function looksLikeZip(buffer) {
+  return buffer.length >= 4 && ZIP_MAGIC_PREFIXES.some((magic) => buffer.subarray(0, 4).equals(magic));
+}
+
 /**
  * Reads a song file as text, transparently extracting VideoPsalm's compressed
  * .vpc export (a plain ZIP containing one JSON entry) first if that's what
- * it is. Returns { text, filename } - filename is the original for a normal
- * text file, or the inner ZIP entry's name for a .vpc (so detectFormat sees
- * the real underlying file, not the outer .vpc name).
+ * it is - detected from the file's own bytes, not its extension (see
+ * looksLikeZip). Returns { text, filename } - filename is the original for a
+ * normal text file, or the inner ZIP entry's name for a ZIP export (so
+ * detectFormat sees the real underlying file, not the outer archive's name).
  */
 async function readSongFileText(filePath, filename) {
+  const buffer = await fs.promises.readFile(filePath);
   const ext = path.extname(String(filename || filePath)).toLowerCase();
-  if (ext !== ".vpc") {
-    return { text: await fs.promises.readFile(filePath, "utf8"), filename };
+
+  if (!looksLikeZip(buffer)) {
+    // A file explicitly named .vpc that isn't actually ZIP content is almost
+    // certainly a corrupted/truncated export, not a genuine plain-text song -
+    // worth a clear, specific error rather than silently misreading it as text.
+    if (ext === ".vpc") {
+      throw new Error(
+        `Could not open this as a VideoPsalm compressed songbook (.vpc): the file doesn't look like a valid ZIP archive. If this isn't a real VideoPsalm export, or came from a very different version, try re-exporting with "Compressed" unchecked so it saves as a plain .json instead.`
+      );
+    }
+    return { text: buffer.toString("utf8"), filename };
   }
 
-  const buffer = await fs.promises.readFile(filePath);
   let entries;
   try {
     entries = readZipEntries(buffer);

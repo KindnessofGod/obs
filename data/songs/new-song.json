@@ -1,0 +1,13 @@
+{
+  "id": "new-song",
+  "title": "New song",
+  "slides": [
+    {
+      "label": "Verse 1",
+      "lines": [
+        "Thank You For Coming",
+        "See you By 3pm For Communion Service."
+      ]
+    }
+  ]
+}

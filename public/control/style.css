@@ -25,14 +25,25 @@ html, body {
   margin: 0;
   padding: 0;
   width: 100%;
+  height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   overflow-x: hidden;
 }
 
+/* The dock's own top controls (Hide, tabs, staged banner) stay fixed height
+   and never scroll; only the active tab panel below them scrolls, and it
+   scrolls internally (see .tab-panel.active) rather than the whole page - so
+   a tab's own search box / picker / nav row can be pinned in place via
+   position: sticky while its results list scrolls underneath (see
+   .scripture-sticky-header). Without this, the whole page scrolled as one
+   block and those controls scrolled out of view along with the results. */
 body {
-  padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 button {
@@ -67,6 +78,7 @@ input[type="text"]:focus, textarea:focus {
 /* ---- Top bar: safety-critical Hide button + connection status ---- */
 
 #topBar {
+  flex: none;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -131,6 +143,7 @@ input[type="text"]:focus, textarea:focus {
 /* ---- Live banner ---- */
 
 .live-banner {
+  flex: none;
   padding: 6px 10px;
   font-size: 12px;
   border-bottom: 1px solid var(--border);
@@ -153,6 +166,7 @@ input[type="text"]:focus, textarea:focus {
 /* ---- Staged banner: persistent across every tab ---- */
 
 .staged-banner {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -264,6 +278,20 @@ input[type="text"]:focus, textarea:focus {
 }
 .layout-checkbox input { accent-color: var(--accent); }
 .layout-checkbox span { width: auto; flex: 1; }
+
+.layout-row select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.layout-row select:focus { outline: none; border-color: var(--accent); }
+.layout-row:has(select) > span:first-child { width: auto; flex: none; white-space: nowrap; }
 #layoutResetBtn {
   width: 100%;
   font-size: 12px;
@@ -272,6 +300,7 @@ input[type="text"]:focus, textarea:focus {
 /* ---- Tabs ---- */
 
 #tabs {
+  flex: none;
   display: flex;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
@@ -296,7 +325,27 @@ input[type="text"]:focus, textarea:focus {
   display: none;
   padding: 8px;
 }
-.tab-panel.active { display: block; }
+.tab-panel.active {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Wraps a tab's search box / translation picker / background picker / nav
+   row so it stays put (position: sticky) while that tab's results list
+   scrolls underneath it, instead of scrolling away with the results. */
+.scripture-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding-bottom: 6px;
+}
+
+.scrollable-results {
+  margin-top: 0;
+}
 
 /* ---- Translation picker ---- */
 
@@ -327,6 +376,59 @@ input[type="text"]:focus, textarea:focus {
   font-size: 9px;
   color: var(--warn);
 }
+
+/* ---- Auto-display toggle (scripture tab) ---- */
+
+.auto-live-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.auto-live-toggle input { accent-color: var(--accent); flex: none; }
+.auto-live-toggle:has(input:checked) {
+  color: var(--text);
+  border-color: var(--ok);
+  background: rgba(62, 207, 111, 0.1);
+}
+
+/* ---- Saved scriptures (one-click recall) ---- */
+
+.saved-scriptures-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.saved-scripture-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 4px 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text-dim);
+}
+.saved-scripture-pill:hover { color: var(--text); border-color: var(--accent); }
+.saved-scripture-pill .remove-saved {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 999px;
+}
+.saved-scripture-pill .remove-saved:hover { color: var(--danger); background: var(--bg-hover); }
 
 /* ---- Background picker (per slide type, remembered separately) ---- */
 

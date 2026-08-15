@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const express = require("express");
 const multer = require("multer");
 const { WebSocketServer } = require("ws");
@@ -11,6 +12,7 @@ const PORT = process.env.PORT || 3210;
 const DATA_DIR = path.join(__dirname, "..", "data");
 const SONGS_DIR = path.join(DATA_DIR, "songs");
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements", "announcements.json");
+const SCRIPTURE_BOOKMARKS_FILE = path.join(DATA_DIR, "scripture-bookmarks", "bookmarks.json");
 const BACKGROUNDS_DIR = path.join(DATA_DIR, "backgrounds");
 
 const app = express();
@@ -122,6 +124,47 @@ app.post("/api/announcements", (req, res) => {
   res.json(list);
 });
 
+// ---- Saved scripture references ----
+// Lets the operator bookmark a verse (e.g. the anchor verse of today's
+// sermon) and recall it with one click later in the service, without
+// disturbing whatever's currently staged/live - distinct from search
+// history, which isn't persisted at all.
+
+app.get("/api/scripture-bookmarks", (req, res) => {
+  if (!fs.existsSync(SCRIPTURE_BOOKMARKS_FILE)) return res.json([]);
+  res.json(JSON.parse(fs.readFileSync(SCRIPTURE_BOOKMARKS_FILE, "utf8")));
+});
+
+app.post("/api/scripture-bookmarks", (req, res) => {
+  const { book, chapter, verse, translation } = req.body || {};
+  if (!book || !chapter || !verse || !translation) {
+    return res.status(400).json({ error: "book, chapter, verse, translation are required" });
+  }
+  const dir = path.dirname(SCRIPTURE_BOOKMARKS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const list = fs.existsSync(SCRIPTURE_BOOKMARKS_FILE)
+    ? JSON.parse(fs.readFileSync(SCRIPTURE_BOOKMARKS_FILE, "utf8"))
+    : [];
+  const entry = {
+    id: crypto.randomUUID(),
+    book: String(book),
+    chapter: Number(chapter),
+    verse: Number(verse),
+    translation: String(translation),
+  };
+  list.push(entry);
+  fs.writeFileSync(SCRIPTURE_BOOKMARKS_FILE, JSON.stringify(list, null, 2));
+  res.json(list);
+});
+
+app.delete("/api/scripture-bookmarks/:id", (req, res) => {
+  if (!fs.existsSync(SCRIPTURE_BOOKMARKS_FILE)) return res.json([]);
+  const list = JSON.parse(fs.readFileSync(SCRIPTURE_BOOKMARKS_FILE, "utf8"));
+  const next = list.filter((b) => b.id !== req.params.id);
+  fs.writeFileSync(SCRIPTURE_BOOKMARKS_FILE, JSON.stringify(next, null, 2));
+  res.json(next);
+});
+
 // ---- Config (non-secret only) ----
 
 const BACKGROUND_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".mp4", ".webm", ".mov"]);
@@ -146,6 +189,9 @@ const TEXT_SCALE_MAX = 1.6;
 const LAYOUT_PCT_MIN = 5;
 const LAYOUT_PCT_MAX = 200;
 const LAYOUT_FIELDS = ["bgWidthPct", "bgHeightPct", "textWidthPct", "textHeightPct"];
+const TEXT_ALIGN_VALUES = new Set(["top", "middle", "bottom"]);
+const TEXT_HALIGN_VALUES = new Set(["left", "center", "right"]);
+const FONT_FAMILY_VALUES = new Set(["default", "serif", "sans", "condensed", "rounded"]);
 
 function sanitizeLayout(raw) {
   const layout = {};
@@ -154,6 +200,11 @@ function sanitizeLayout(raw) {
       layout[field] = Math.min(LAYOUT_PCT_MAX, Math.max(LAYOUT_PCT_MIN, raw[field]));
     }
   }
+  if (raw && TEXT_ALIGN_VALUES.has(raw.textAlign)) layout.textAlign = raw.textAlign;
+  if (raw && TEXT_HALIGN_VALUES.has(raw.textHAlign)) layout.textHAlign = raw.textHAlign;
+  if (raw && FONT_FAMILY_VALUES.has(raw.fontFamily)) layout.fontFamily = raw.fontFamily;
+  if (raw && typeof raw.bold === "boolean") layout.bold = raw.bold;
+  if (raw && typeof raw.allCaps === "boolean") layout.allCaps = raw.allCaps;
   return layout;
 }
 

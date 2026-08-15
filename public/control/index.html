@@ -39,46 +39,64 @@
 
   <!-- ===================== SCRIPTURE ===================== -->
   <section id="tab-scripture" class="tab-panel active">
-    <input id="scriptureSearch" type="text" placeholder="Reference or keywords… (e.g. jn 3:16)" autocomplete="off" />
+    <div class="scripture-sticky-header">
+      <input id="scriptureSearch" type="text" placeholder="Reference or keywords… (e.g. jn 3:16)" autocomplete="off" />
 
-    <div id="translationPicker" class="translation-picker"></div>
+      <div id="translationPicker" class="translation-picker"></div>
 
-    <div class="bg-picker">
-      <label for="scriptureBgSelect">Background</label>
-      <select id="scriptureBgSelect"></select>
+      <label id="autoLiveToggle" class="auto-live-toggle" title="When on, clicking a verse (or stepping with Prev/Next/arrow keys) puts it straight on screen instead of just staging it">
+        <input id="autoLiveCheckbox" type="checkbox" />
+        Auto display (skip staging — click/step puts it on screen immediately)
+      </label>
+
+      <div class="bg-picker">
+        <label for="scriptureBgSelect">Background</label>
+        <select id="scriptureBgSelect"></select>
+      </div>
+
+      <div id="scriptureNav" class="nav-controls" hidden>
+        <button id="prevVerseBtn">&#9664; Prev</button>
+        <span id="currentVerseLabel" class="nav-label"></span>
+        <button id="nextVerseBtn">Next &#9654;</button>
+        <button id="saveScriptureBtn" title="Save this verse for one-click recall later">&#9733; Save</button>
+      </div>
+
+      <div id="savedScripturesRow" class="saved-scriptures-row" hidden></div>
     </div>
 
-    <div id="scriptureNav" class="nav-controls" hidden>
-      <button id="prevVerseBtn">&#9664; Prev</button>
-      <span id="currentVerseLabel" class="nav-label"></span>
-      <button id="nextVerseBtn">Next &#9654;</button>
-    </div>
-
-    <div id="scriptureResults" class="results-list"></div>
+    <div id="scriptureResults" class="results-list scrollable-results"></div>
   </section>
 
   <!-- ===================== SONGS ===================== -->
   <section id="tab-songs" class="tab-panel">
-    <input id="songSearch" type="text" placeholder="Search songs by title…" autocomplete="off" />
+    <div class="scripture-sticky-header">
+      <input id="songSearch" type="text" placeholder="Search songs by title…" autocomplete="off" />
 
-    <div class="bg-picker">
-      <label for="lyricBgSelect">Background</label>
-      <select id="lyricBgSelect"></select>
+      <div class="bg-picker">
+        <label for="lyricBgSelect">Background</label>
+        <select id="lyricBgSelect"></select>
+      </div>
     </div>
 
-    <div id="songList" class="results-list"></div>
+    <div id="songList" class="results-list scrollable-results"></div>
 
     <div id="songDetail" hidden>
-      <div class="song-detail-header">
-        <button id="backToSongsBtn" title="Back to song list">&#8592;</button>
-        <h3 id="songDetailTitle"></h3>
+      <div class="scripture-sticky-header">
+        <div class="song-detail-header">
+          <button id="backToSongsBtn" title="Back to song list">&#8592;</button>
+          <h3 id="songDetailTitle"></h3>
+        </div>
+        <div id="slideNav" class="nav-controls">
+          <button id="prevSlideBtn">&#9664; Prev</button>
+          <span id="currentSlideLabel" class="nav-label"></span>
+          <button id="nextSlideBtn">Next &#9654;</button>
+        </div>
+        <label id="autoLiveToggleSongs" class="auto-live-toggle" title="When on, clicking a slide (or stepping with Prev/Next/arrow keys) puts it straight on screen instead of just staging it">
+          <input id="autoLiveCheckboxSongs" type="checkbox" />
+          Auto display (skip staging — click/step puts it on screen immediately)
+        </label>
       </div>
-      <div id="slideNav" class="nav-controls">
-        <button id="prevSlideBtn">&#9664; Prev</button>
-        <span id="currentSlideLabel" class="nav-label"></span>
-        <button id="nextSlideBtn">Next &#9654;</button>
-      </div>
-      <div id="slideList" class="results-list"></div>
+      <div id="slideList" class="results-list scrollable-results"></div>
     </div>
   </section>
 
@@ -146,6 +164,44 @@
           <span>Height</span>
           <input type="range" id="textHeightRange" min="5" max="80" step="1" />
           <span class="layout-value" id="textHeightValue">28%</span>
+        </label>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text style</div>
+        <label class="layout-row">
+          <span>Vertical position</span>
+          <select id="textAlignSelect">
+            <option value="top">Top</option>
+            <option value="middle">Middle</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Horizontal position</span>
+          <select id="textHAlignSelect">
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Font</span>
+          <select id="fontFamilySelect">
+            <option value="default">Default (per slide type)</option>
+            <option value="serif">Serif</option>
+            <option value="sans">Sans-serif</option>
+            <option value="condensed">Condensed</option>
+            <option value="rounded">Rounded</option>
+          </select>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="boldCheckbox" />
+          <span>Bold</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="allCapsCheckbox" />
+          <span>ALL CAPS</span>
         </label>
       </div>
 

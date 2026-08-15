@@ -1,6 +1,19 @@
 (() => {
   "use strict";
 
+  // Distinguishes our own action echoes (the server broadcasts every show/
+  // update back to every client, including the sender) from a genuinely
+  // different window's action. Rapid stepping (e.g. holding an arrow key)
+  // can send a new action before the echo of the PREVIOUS one comes back,
+  // so an echo can arrive out of order - without this, a stale echo of an
+  // action we've already moved past locally would be indistinguishable
+  // from a newer change and would stomp our local state backward.
+  const CLIENT_ID = Math.random().toString(36).slice(2);
+  // Per-type counter of our own sends, tagged onto outgoing content as
+  // `_seq` so an echo can be recognized as older than what we've since
+  // moved on to locally (see isStaleOwnEcho).
+  const sendSeq = { scripture: 0, lyric: 0, announcement: 0 };
+
   // ============================================================
   // WebSocket connection
   // ============================================================
@@ -142,8 +155,26 @@
   // Best-effort: when a slide becomes live (from our own action, another control
   // window, or a page reload's initial `state`), keep the Prev/Next context in sync
   // so navigation buttons work no matter who set the current slide.
+  // True if `content` is an out-of-order echo of one of OUR OWN earlier
+  // sends for `type` - i.e. we've since sent something newer locally (its
+  // `_seq` is behind sendSeq[type]) - as opposed to a genuinely new change
+  // from another window, which always gets a different `_origin`.
+  function isStaleOwnEcho(content, type) {
+    return !!content && content._origin === CLIENT_ID && typeof content._seq === "number" && content._seq < sendSeq[type];
+  }
+
   function reconcileLiveState(current) {
     if (current.slideType === "scripture") {
+      if (isStaleOwnEcho(current.content, "scripture")) {
+        // Rapid arrow-key stepping can outrun the WS round trip: we've
+        // already moved on to a newer verse locally, so an echo of an older
+        // one of our own sends arriving late must be ignored - otherwise it
+        // stomps the control tab's label/state back to where we used to be
+        // (the display itself is unaffected since it has no such reconciliation,
+        // it just always shows whatever it's told most recently).
+        currentScriptureIsLive = true;
+        return;
+      }
       // If this is just our own "show"/"update" echoing back (the server
       // broadcasts to every client, including the sender), currentScripture
       // already correctly tracks the full parts array - re-deriving it from
@@ -168,6 +199,10 @@
         renderScriptureNav(current.content);
       }
     } else if (current.slideType === "lyric") {
+      if (isStaleOwnEcho(current.content, "lyric")) {
+        currentLyricIsLive = true;
+        return;
+      }
       if (isLocallyTrackedLyric(current.content)) {
         currentLyricIsLive = true; // already reflects our own action, skip refetch
         return;
@@ -277,17 +312,27 @@
     return bg ? { ...content, background: bg } : content;
   }
 
+  // Tags outgoing content with our client id + a per-type sequence number
+  // (see isStaleOwnEcho) without mutating `full`/`lastContent[type]` -
+  // `full` can be the exact same object as `content` when no background is
+  // set (withBackground returns it unchanged), so this always builds a
+  // fresh object rather than assigning onto `full` directly.
+  function taggedForWire(type, full) {
+    if (!(type in sendSeq)) return full;
+    return { ...full, _seq: ++sendSeq[type], _origin: CLIENT_ID };
+  }
+
   function sendShow(type, content) {
     lastContent[type] = content;
     const full = withBackground(type, content);
-    send({ type: "show", slideType: type, content: full });
+    send({ type: "show", slideType: type, content: taggedForWire(type, full) });
     renderLiveBanner(true, { slideType: type, content: full });
   }
 
   function sendUpdate(type, content) {
     lastContent[type] = content;
     const full = withBackground(type, content);
-    send({ type: "update", content: full });
+    send({ type: "update", content: taggedForWire(type, full) });
     renderLiveBanner(true, { slideType: type, content: full });
   }
 
@@ -352,6 +397,19 @@
     pushPreview();
   }
 
+  // Stages `content` as usual, unless `autoLive` is on - then it skips
+  // staging entirely and puts it straight on screen (used by scripture's
+  // "Auto display" toggle so reading through a passage doesn't require a
+  // "Display Live" click after every single verse).
+  function stageOrGoLive(slideType, content, autoLive) {
+    if (autoLive) {
+      sendShow(slideType, content);
+      return true;
+    }
+    stage(slideType, content);
+    return false;
+  }
+
   function clearStaged() {
     staged = null;
     renderStagedBanner();
@@ -373,7 +431,17 @@
   // or vice versa.
   // ============================================================
 
-  const LAYOUT_DEFAULTS = { bgWidthPct: 100, bgHeightPct: null, textWidthPct: 88, textHeightPct: 28 };
+  const LAYOUT_DEFAULTS = {
+    bgWidthPct: 100,
+    bgHeightPct: null,
+    textWidthPct: 88,
+    textHeightPct: 28,
+    textAlign: "bottom",
+    textHAlign: "left",
+    fontFamily: "default",
+    bold: false,
+    allCaps: false,
+  };
 
   const bgWidthRange = document.getElementById("bgWidthRange");
   const bgWidthValueEl = document.getElementById("bgWidthValue");
@@ -384,6 +452,11 @@
   const textWidthValueEl = document.getElementById("textWidthValue");
   const textHeightRange = document.getElementById("textHeightRange");
   const textHeightValueEl = document.getElementById("textHeightValue");
+  const textAlignSelect = document.getElementById("textAlignSelect");
+  const textHAlignSelect = document.getElementById("textHAlignSelect");
+  const fontFamilySelect = document.getElementById("fontFamilySelect");
+  const boldCheckbox = document.getElementById("boldCheckbox");
+  const allCapsCheckbox = document.getElementById("allCapsCheckbox");
   const layoutResetBtn = document.getElementById("layoutResetBtn");
 
   let layout = { ...LAYOUT_DEFAULTS };
@@ -411,6 +484,12 @@
     textWidthValueEl.textContent = layout.textWidthPct + "%";
     textHeightRange.value = layout.textHeightPct;
     textHeightValueEl.textContent = layout.textHeightPct + "%";
+
+    textAlignSelect.value = layout.textAlign;
+    textHAlignSelect.value = layout.textHAlign;
+    fontFamilySelect.value = layout.fontFamily;
+    boldCheckbox.checked = layout.bold;
+    allCapsCheckbox.checked = layout.allCaps;
   }
 
   function pushLayoutToPreview() {
@@ -441,6 +520,11 @@
   });
   textWidthRange.addEventListener("input", () => setLayout({ textWidthPct: Number(textWidthRange.value) }));
   textHeightRange.addEventListener("input", () => setLayout({ textHeightPct: Number(textHeightRange.value) }));
+  textAlignSelect.addEventListener("change", () => setLayout({ textAlign: textAlignSelect.value }));
+  textHAlignSelect.addEventListener("change", () => setLayout({ textHAlign: textHAlignSelect.value }));
+  fontFamilySelect.addEventListener("change", () => setLayout({ fontFamily: fontFamilySelect.value }));
+  boldCheckbox.addEventListener("change", () => setLayout({ bold: boldCheckbox.checked }));
+  allCapsCheckbox.addEventListener("change", () => setLayout({ allCaps: allCapsCheckbox.checked }));
   layoutResetBtn.addEventListener("click", () => setLayout({ ...LAYOUT_DEFAULTS }));
 
   renderLayoutControls();
@@ -540,46 +624,144 @@
   // verse or song stanza doesn't have to be shrunk down to illegibility on
   // the projector. Next/Previous step through the parts before advancing to
   // the actual next verse/slide - see stepVerse/stepSlide below.
+  //
+  // Parts are capped at MAX_LINES_PER_PART *actual rendered lines*, measured
+  // with a real canvas text metrics pass rather than a fixed character-count
+  // guess - a guess tuned for the default 100% text size silently overflows
+  // once the operator runs a bigger size (e.g. 120%) or a wider/narrower
+  // font/box, which is exactly the failure this replaced. The measurement
+  // mirrors the real display's CSS (see FONT_FAMILY_STACKS/SLIDE_DEFAULT_*
+  // below and display/style.css) at a fixed 1920px-wide reference canvas -
+  // the size the README tells operators to set the Browser Source to. Since
+  // display/style.css's font-size clamp() maxes out well below what 1920px's
+  // vw value would otherwise produce (e.g. 3vw = 57.6px vs a 46px cap), the
+  // effective font size at that canvas width is just the cap * text scale,
+  // which is what's reproduced here.
   // ============================================================
 
-  const SCRIPTURE_MAX_CHARS_PER_PART = 200; // roughly a comfortably-readable chunk at the display's default font size
-  const LYRIC_MAX_LINES_PER_PART = 4; // matches typical song "block" sizes
+  const MAX_LINES_PER_PART = 3;
+  const REFERENCE_CANVAS_WIDTH_PX = 1920;
 
-  // Splits prose (a scripture verse) into parts by greedily packing whole
-  // words up to maxChars, so a very long verse (common in OT narrative)
-  // breaks at word boundaries instead of overflowing the text box.
-  function splitTextIntoParts(text, maxChars) {
-    maxChars = maxChars || SCRIPTURE_MAX_CHARS_PER_PART;
-    const trimmed = String(text || "").trim();
-    if (trimmed.length <= maxChars) return [trimmed];
+  // Must stay in sync with FONT_FAMILY_STACKS in display/app.js.
+  const FONT_FAMILY_STACKS = {
+    serif: 'Georgia, "Times New Roman", serif',
+    sans: '-apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+    condensed: '"Arial Narrow", "Segoe UI", sans-serif',
+    rounded: 'Calibri, "Trebuchet MS", sans-serif',
+  };
+  // Each slide type's own default (unstyled) font - matches display/style.css.
+  const SLIDE_DEFAULT_FONT = {
+    scripture: 'Georgia, "Times New Roman", serif',
+    lyric: '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  };
+  const SLIDE_DEFAULT_WEIGHT = { scripture: 400, lyric: 600 };
+  const SLIDE_ITALIC = { scripture: true, lyric: false };
 
-    const words = trimmed.split(/\s+/);
-    const parts = [];
-    let current = "";
-    for (const word of words) {
-      const candidate = current ? current + " " + word : word;
-      if (candidate.length > maxChars && current) {
-        parts.push(current);
-        current = word;
+  function clampPx(minPx, vwFraction, maxPx) {
+    return Math.min(maxPx, Math.max(minPx, REFERENCE_CANVAS_WIDTH_PX * vwFraction));
+  }
+
+  // .lt-content's own box width (--text-width, set from layout.textWidthPct)
+  // minus its horizontal padding (6vw + 5vw - see display/style.css .lt-content).
+  function availableTextWidthPx() {
+    const boxWidthPx = ((layout.textWidthPct != null ? layout.textWidthPct : 88) / 100) * REFERENCE_CANVAS_WIDTH_PX;
+    const horizontalPaddingPx = 0.11 * REFERENCE_CANVAS_WIDTH_PX;
+    return Math.max(40, boxWidthPx - horizontalPaddingPx);
+  }
+
+  function measureFontFor(slideType, fontPx) {
+    const family = FONT_FAMILY_STACKS[layout.fontFamily] || SLIDE_DEFAULT_FONT[slideType];
+    const weight = layout.bold ? 700 : SLIDE_DEFAULT_WEIGHT[slideType];
+    const style = SLIDE_ITALIC[slideType] ? "italic" : "normal";
+    return `${style} ${weight} ${fontPx}px ${family}`;
+  }
+
+  // Offscreen canvas used purely for text-metrics (never attached to the DOM).
+  const measureCanvas = document.createElement("canvas");
+  const measureCtx = measureCanvas.getContext("2d");
+
+  // Greedy word-wrap simulation, returning arrays of WORD INDICES per
+  // rendered line (not the words themselves) so callers can map back to the
+  // original-case words - `words` here may already be upper-cased for
+  // measurement purposes (see splitTextIntoParts) without losing the
+  // original casing of the actual content.
+  function wrapIndicesToLines(words, font, maxWidthPx) {
+    measureCtx.font = font;
+    const lines = [[]];
+    let width = 0;
+    const spaceWidth = measureCtx.measureText(" ").width;
+    words.forEach((word, i) => {
+      const wordWidth = measureCtx.measureText(word).width;
+      const cur = lines[lines.length - 1];
+      const candidateWidth = cur.length ? width + spaceWidth + wordWidth : wordWidth;
+      if (candidateWidth > maxWidthPx && cur.length) {
+        lines.push([i]);
+        width = wordWidth;
       } else {
-        current = candidate;
+        cur.push(i);
+        width = candidateWidth;
       }
+    });
+    return lines;
+  }
+
+  // Splits prose (a scripture verse) into parts of at most MAX_LINES_PER_PART
+  // *rendered* lines each, so a long verse breaks at word boundaries that
+  // actually fit the box - not just word boundaries under some fixed
+  // character count that may or may not match how it actually wraps.
+  function splitTextIntoParts(text) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return [""];
+
+    const originalWords = trimmed.split(/\s+/);
+    const measureWords = layout.allCaps ? originalWords.map((w) => w.toUpperCase()) : originalWords;
+    const fontPx = clampPx(24, 0.03, 46) * textScale;
+    const font = measureFontFor("scripture", fontPx);
+    const wrappedLines = wrapIndicesToLines(measureWords, font, availableTextWidthPx());
+
+    const parts = [];
+    for (let i = 0; i < wrappedLines.length; i += MAX_LINES_PER_PART) {
+      const indices = wrappedLines.slice(i, i + MAX_LINES_PER_PART).flat();
+      parts.push(indices.map((idx) => originalWords[idx]).join(" "));
     }
-    if (current) parts.push(current);
     return parts.length ? parts : [trimmed];
   }
 
   // Splits a song slide's lines (already broken into natural lines by the
-  // song data) into groups of at most maxLines each.
-  function splitLinesIntoParts(lines, maxLines) {
-    maxLines = maxLines || LYRIC_MAX_LINES_PER_PART;
+  // song data) into parts of at most MAX_LINES_PER_PART *rendered* lines -
+  // grouping whole original lines together where they fit, but also
+  // accounting for a single long lyric line wrapping into more than one
+  // rendered line on its own (same overflow risk as a long scripture verse).
+  function splitLinesIntoParts(lines) {
     const safeLines = Array.isArray(lines) ? lines : [];
-    if (safeLines.length <= maxLines) return [safeLines];
-    const parts = [];
-    for (let i = 0; i < safeLines.length; i += maxLines) {
-      parts.push(safeLines.slice(i, i + maxLines));
+    if (safeLines.length === 0) return [[]];
+
+    const fontPx = clampPx(24, 0.031, 48) * textScale;
+    const font = measureFontFor("lyric", fontPx);
+    const maxWidthPx = availableTextWidthPx();
+
+    function renderedRowsFor(line) {
+      const words = String(line || "").trim().split(/\s+/).filter(Boolean);
+      if (words.length === 0) return 1;
+      const measureWords = layout.allCaps ? words.map((w) => w.toUpperCase()) : words;
+      return Math.max(1, wrapIndicesToLines(measureWords, font, maxWidthPx).length);
     }
-    return parts;
+
+    const parts = [];
+    let current = [];
+    let currentRows = 0;
+    for (const line of safeLines) {
+      const rows = renderedRowsFor(line);
+      if (current.length && currentRows + rows > MAX_LINES_PER_PART) {
+        parts.push(current);
+        current = [];
+        currentRows = 0;
+      }
+      current.push(line);
+      currentRows += rows;
+    }
+    if (current.length) parts.push(current);
+    return parts.length ? parts : [safeLines];
   }
 
   // Strips a trailing " (N/M)" part-count suffix, e.g. from a reference or
@@ -599,6 +781,30 @@
   const currentVerseLabelEl = document.getElementById("currentVerseLabel");
   const prevVerseBtn = document.getElementById("prevVerseBtn");
   const nextVerseBtn = document.getElementById("nextVerseBtn");
+  const saveScriptureBtn = document.getElementById("saveScriptureBtn");
+  const savedScripturesRowEl = document.getElementById("savedScripturesRow");
+  const autoLiveCheckbox = document.getElementById("autoLiveCheckbox");
+
+  // "Auto display" - when on, picking a verse (click, search-jump, or
+  // stepping) puts it straight on screen instead of only staging it, so the
+  // operator doesn't have to hit "Display Live" after every single verse
+  // while reading through a passage. Persisted like the other per-operator
+  // display preferences (translation, text size).
+  let scriptureAutoLive = false;
+  try {
+    scriptureAutoLive = localStorage.getItem("obs-control:scriptureAutoLive") === "1";
+  } catch {
+    scriptureAutoLive = false;
+  }
+  autoLiveCheckbox.checked = scriptureAutoLive;
+  autoLiveCheckbox.addEventListener("change", () => {
+    scriptureAutoLive = autoLiveCheckbox.checked;
+    try {
+      localStorage.setItem("obs-control:scriptureAutoLive", scriptureAutoLive ? "1" : "0");
+    } catch {
+      // localStorage unavailable; preference just won't persist across restarts
+    }
+  });
 
   let translations = [];
   let selectedTranslation = null;
@@ -707,6 +913,10 @@
       const item = document.createElement("button");
       item.type = "button";
       item.className = "result-item";
+      item.dataset.book = r.book;
+      item.dataset.chapter = r.chapter;
+      item.dataset.verse = r.verse;
+      item.dataset.translation = r.translation;
       item.innerHTML = `
         <div class="ref-line">
           <span>${escapeHtml(r.book)} ${r.chapter}:${r.verse}</span>
@@ -715,6 +925,26 @@
         <div class="verse-text">${escapeHtml(r.text)}</div>`;
       item.addEventListener("click", () => showScriptureVerse(r));
       scriptureResultsEl.appendChild(item);
+    });
+    highlightCurrentScriptureResult();
+  }
+
+  // Keeps the search-results list's highlight in sync with whatever verse is
+  // actually current (staged or live) - without this, a result item's
+  // highlight was never wired to anything, so it looked visually "stuck" on
+  // whichever item you'd clicked even as arrow-key stepping moved on to
+  // other verses. Matches by reference rather than re-rendering the whole
+  // list, since arrow-stepped verses aren't necessarily in the results list
+  // at all (nothing to highlight in that case, which is correct).
+  function highlightCurrentScriptureResult() {
+    scriptureResultsEl.querySelectorAll(".result-item").forEach((item) => {
+      const isCurrent =
+        !!currentScripture &&
+        item.dataset.book === currentScripture.book &&
+        Number(item.dataset.chapter) === currentScripture.chapter &&
+        Number(item.dataset.verse) === currentScripture.verse &&
+        item.dataset.translation === currentScripture.translation;
+      item.classList.toggle("active", isCurrent);
     });
   }
 
@@ -739,9 +969,8 @@
       if (!result) return;
       const parts = splitTextIntoParts(result.text);
       currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse, parts, partIndex: 0 };
-      currentScriptureIsLive = false;
       const content = scriptureContentForPart(currentScripture, parts, 0);
-      stage("scripture", content);
+      currentScriptureIsLive = stageOrGoLive("scripture", content, scriptureAutoLive);
       renderScriptureNav(content);
     } catch {
       // network hiccup; leave whatever's staged untouched
@@ -771,18 +1000,19 @@
   function showScriptureVerse(verse) {
     const parts = splitTextIntoParts(verse.text);
     currentScripture = { translation: verse.translation, book: verse.book, chapter: verse.chapter, verse: verse.verse, parts, partIndex: 0 };
-    // A freshly picked search result is always a new selection - stage it
-    // for preview/confirmation rather than assuming it should replace
-    // whatever's currently live.
-    currentScriptureIsLive = false;
+    // A freshly picked search result is a new selection - normally staged for
+    // preview/confirmation rather than assuming it should replace whatever's
+    // currently live, UNLESS "Auto display" is on, in which case it goes
+    // straight to screen (that's the whole point of the toggle).
     const content = scriptureContentForPart(currentScripture, parts, 0);
-    stage("scripture", content);
+    currentScriptureIsLive = stageOrGoLive("scripture", content, scriptureAutoLive);
     renderScriptureNav(content);
   }
 
   function renderScriptureNav(content) {
     scriptureNavEl.hidden = false;
     currentVerseLabelEl.textContent = `${content.reference} (${content.translation.toUpperCase()})`;
+    highlightCurrentScriptureResult();
   }
 
   async function fetchVerse(translation, book, chapter, verse) {
@@ -852,6 +1082,123 @@
   prevVerseBtn.addEventListener("click", () => stepVerse(-1));
   nextVerseBtn.addEventListener("click", () => stepVerse(1));
 
+  // Arrow-key stepping through the current passage/song, mirroring Prev/Next
+  // - only while the relevant tab is showing and something is actually
+  // selected, so arrow keys elsewhere (typing in another tab's textarea,
+  // etc.) are unaffected. Ignored while typing in a text field EXCEPT the
+  // scripture search box itself, where up/down do nothing useful otherwise.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const active = document.activeElement;
+    const typingElsewhere = active && (active.tagName === "TEXTAREA" || (active.tagName === "INPUT" && active !== scriptureSearchEl));
+    if (typingElsewhere) return;
+
+    if (document.getElementById("tab-scripture").classList.contains("active")) {
+      if (!currentScripture) return;
+      e.preventDefault();
+      stepVerse(e.key === "ArrowDown" ? 1 : -1);
+    } else if (document.getElementById("tab-songs").classList.contains("active")) {
+      if (!currentSong || songDetailEl.hidden) return;
+      e.preventDefault();
+      stepSlide(e.key === "ArrowDown" ? 1 : -1);
+    }
+  });
+
+  // ============================================================
+  // Saved scriptures - bookmark a verse (e.g. today's sermon text) and
+  // recall it with one click later, without needing to re-search. Persisted
+  // server-side (data/scripture-bookmarks/bookmarks.json) so it survives
+  // restarts, same as announcements/songs.
+  // ============================================================
+
+  let savedScriptures = [];
+
+  async function loadScriptureBookmarks() {
+    try {
+      const res = await fetch("/api/scripture-bookmarks");
+      savedScriptures = await res.json();
+    } catch {
+      savedScriptures = [];
+    }
+    renderSavedScriptures();
+  }
+
+  function renderSavedScriptures() {
+    savedScripturesRowEl.innerHTML = "";
+    savedScripturesRowEl.hidden = savedScriptures.length === 0;
+    savedScriptures.forEach((b) => {
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "saved-scripture-pill";
+      pill.title = `Load ${b.book} ${b.chapter}:${b.verse} (${b.translation.toUpperCase()})`;
+      pill.innerHTML = `<span>${escapeHtml(b.book)} ${b.chapter}:${b.verse}</span>`;
+      pill.addEventListener("click", () => loadSavedScripture(b));
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "remove-saved";
+      removeBtn.title = "Remove this saved verse";
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeSavedScripture(b.id);
+      });
+      pill.appendChild(removeBtn);
+
+      savedScripturesRowEl.appendChild(pill);
+    });
+  }
+
+  async function loadSavedScripture(b) {
+    try {
+      const result = await fetchVerse(b.translation, b.book, b.chapter, b.verse);
+      if (!result) return;
+      // A saved translation might not be selected/loaded right now (e.g. a
+      // licensed one that isn't currently active) - switch the picker to
+      // match so what's shown lines up with what's selected.
+      if (result.translation !== selectedTranslation && translations.some((t) => t.id === result.translation)) {
+        selectedTranslation = result.translation;
+        localStorage.setItem("obs-control:selectedTranslation", selectedTranslation);
+        renderTranslationPicker();
+      }
+      const parts = splitTextIntoParts(result.text);
+      currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse, parts, partIndex: 0 };
+      const content = scriptureContentForPart(currentScripture, parts, 0);
+      currentScriptureIsLive = stageOrGoLive("scripture", content, scriptureAutoLive);
+      renderScriptureNav(content);
+    } catch {
+      // network hiccup; leave whatever's staged/live untouched
+    }
+  }
+
+  async function removeSavedScripture(id) {
+    try {
+      const res = await fetch(`/api/scripture-bookmarks/${encodeURIComponent(id)}`, { method: "DELETE" });
+      savedScriptures = await res.json();
+    } catch {
+      savedScriptures = savedScriptures.filter((b) => b.id !== id);
+    }
+    renderSavedScriptures();
+  }
+
+  saveScriptureBtn.addEventListener("click", async () => {
+    if (!currentScripture) return;
+    const { book, chapter, verse, translation } = currentScripture;
+    try {
+      const res = await fetch("/api/scripture-bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ book, chapter, verse, translation }),
+      });
+      savedScriptures = await res.json();
+      renderSavedScriptures();
+    } catch {
+      // network hiccup; nothing saved, nothing else to do
+    }
+  });
+
+  loadScriptureBookmarks();
+
   function parseReference(ref) {
     // "John 3:16" / "1 John 3:16" (optionally with a trailing " (1/2)" part
     // suffix, stripped first) -> { book, chapter, verse }
@@ -875,6 +1222,28 @@
   const currentSlideLabelEl = document.getElementById("currentSlideLabel");
   const prevSlideBtn = document.getElementById("prevSlideBtn");
   const nextSlideBtn = document.getElementById("nextSlideBtn");
+  const autoLiveCheckboxSongs = document.getElementById("autoLiveCheckboxSongs");
+
+  // "Auto display" for songs - same idea as scripture's, but defaults ON:
+  // a song service is fast-paced (click a slide, it needs to be on screen
+  // immediately, not staged-then-confirmed), so skipping the extra
+  // "Display Live" step is the expected default here rather than an opt-in.
+  let lyricAutoLive = true;
+  try {
+    const saved = localStorage.getItem("obs-control:lyricAutoLive");
+    if (saved !== null) lyricAutoLive = saved === "1";
+  } catch {
+    lyricAutoLive = true;
+  }
+  autoLiveCheckboxSongs.checked = lyricAutoLive;
+  autoLiveCheckboxSongs.addEventListener("change", () => {
+    lyricAutoLive = autoLiveCheckboxSongs.checked;
+    try {
+      localStorage.setItem("obs-control:lyricAutoLive", lyricAutoLive ? "1" : "0");
+    } catch {
+      // localStorage unavailable; preference just won't persist across restarts
+    }
+  });
 
   let songsIndex = [];
   let songsLoaded = false;
@@ -945,6 +1314,10 @@
     currentSlideIndex = -1;
     currentSlideParts = null;
     currentSlidePartIndex = 0;
+    // Hide the (potentially long) song list while viewing a song's lyrics -
+    // otherwise it sits above the slide list in the DOM and you'd have to
+    // scroll past every song title before reaching the actual lyrics.
+    songListEl.hidden = true;
     songDetailEl.hidden = false;
     songDetailTitleEl.textContent = currentSong.title;
     renderSlideList();
@@ -955,6 +1328,7 @@
 
   document.getElementById("backToSongsBtn").addEventListener("click", () => {
     songDetailEl.hidden = true;
+    songListEl.hidden = false;
   });
 
   function renderSlideList() {
@@ -987,23 +1361,22 @@
 
   // Selects slide `idx` fresh (always starting at its first part) and stages
   // or live-updates it depending on `live`.
-  function applySlide(idx, live) {
+  function applySlide(idx) {
     if (!currentSong || idx < 0 || idx >= currentSong.slides.length) return;
     currentSlideIndex = idx;
     const slide = currentSong.slides[idx];
     currentSlideParts = splitLinesIntoParts(slide.lines);
     currentSlidePartIndex = 0;
     const content = slideContentForPart(slide, currentSlideParts, 0);
-    if (live) sendUpdate("lyric", content);
-    else stage("lyric", content);
+    currentLyricIsLive = stageOrGoLive("lyric", content, lyricAutoLive);
     renderSlideList();
   }
 
-  // A direct click on a slide (or auto-opening a song's first slide) is
-  // always a fresh selection - stage it for preview/confirmation.
+  // A direct click on a slide (or auto-opening a song's first slide) is a
+  // fresh selection - goes straight on screen when "Auto display" is on
+  // (the default for songs), otherwise stages for preview/confirmation.
   function selectSlide(idx) {
-    currentLyricIsLive = false;
-    applySlide(idx, false);
+    applySlide(idx);
   }
 
   // Prev/Next: steps within the current slide's parts first (if split),
@@ -1069,6 +1442,7 @@
           currentSlideParts = null;
           currentSlidePartIndex = 0;
         }
+        songListEl.hidden = true;
         songDetailEl.hidden = false;
         songDetailTitleEl.textContent = song.title;
         renderSlideList();
