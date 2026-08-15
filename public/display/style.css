@@ -223,13 +223,6 @@ html, body {
   color: #f4e2a1;
 }
 
-.slide-lyric .slide-label {
-  font-size: calc(clamp(13px, 1.1vw, 18px) * var(--text-scale, 1));
-  opacity: 0.8;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
 /* Announcement ---------------------------------------------------------------- */
 
 .slide-announcement .announcement-title {

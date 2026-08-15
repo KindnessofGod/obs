@@ -51,12 +51,14 @@
     if (slideType === "lyric") {
       var lines = Array.isArray(content.lines) ? content.lines : [];
       var linesHtml = lines.map(function (l) { return "<div>" + escapeHtml(l) + "</div>"; }).join("");
+      // Only the song title is shown on the projection - the slide label
+      // ("Verse 1", "Chorus 2", etc.) is operator-facing only (see the
+      // control UI's slide list/nav label), never rendered here.
       return (
         '<div class="slide slide-lyric">' +
         '<div class="lyric-lines">' + linesHtml + "</div>" +
         '<div class="lyric-meta">' +
         (content.songTitle ? '<span class="song-title">' + escapeHtml(content.songTitle) + "</span>" : "") +
-        (content.slideLabel ? '<span class="slide-label">' + escapeHtml(content.slideLabel) + "</span>" : "") +
         "</div>" +
         "</div>"
       );

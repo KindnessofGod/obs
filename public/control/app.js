@@ -237,6 +237,24 @@
     return div.innerHTML;
   }
 
+  // Scrolls the currently-highlighted result/slide row into view as the
+  // operator steps through verses/slides, so what's actually on screen
+  // never scrolls out of sight and needs a manual scroll to find. A plain
+  // scrollIntoView isn't enough here: the results list sits right below a
+  // `position: sticky` header (search box, nav controls, etc.) within the
+  // same scrolling panel, so it could tuck an item's top edge exactly under
+  // that header, hiding it behind it. scroll-margin-top (read by
+  // scrollIntoView's alignment) reserves that header's actual current
+  // height so the item lands fully visible below it instead.
+  function scrollActiveIntoView(item) {
+    if (!item) return;
+    const list = item.parentElement;
+    const header = list && list.previousElementSibling;
+    const headerHeight = header && header.classList.contains("scripture-sticky-header") ? header.getBoundingClientRect().height : 0;
+    item.style.scrollMarginTop = headerHeight ? `${headerHeight}px` : "";
+    item.scrollIntoView({ block: "nearest" });
+  }
+
   // ============================================================
   // Backgrounds (per slide-type, remembered separately)
   // ============================================================
@@ -954,6 +972,7 @@
   // list, since arrow-stepped verses aren't necessarily in the results list
   // at all (nothing to highlight in that case, which is correct).
   function highlightCurrentScriptureResult() {
+    let activeItem = null;
     scriptureResultsEl.querySelectorAll(".result-item").forEach((item) => {
       const isCurrent =
         !!currentScripture &&
@@ -962,7 +981,11 @@
         Number(item.dataset.verse) === currentScripture.verse &&
         item.dataset.translation === currentScripture.translation;
       item.classList.toggle("active", isCurrent);
+      if (isCurrent) activeItem = item;
     });
+    // Keep the highlighted row in view as the operator arrow-steps through
+    // verses, so what's on screen never scrolls out of sight while stepping.
+    scrollActiveIntoView(activeItem);
   }
 
   const debouncedScriptureSearch = debounce(runScriptureSearch, 150);
@@ -1372,6 +1395,7 @@
   // then blindly stepping through its parts with Prev/Next/arrows.
   function renderSlideList() {
     slideListEl.innerHTML = "";
+    let activeItem = null;
     (currentSong.slides || []).forEach((slide, slideIdx) => {
       const parts = splitLinesIntoParts(slide.lines);
       parts.forEach((partLines, partIdx) => {
@@ -1383,9 +1407,13 @@
         item.innerHTML = `<div class="slide-label">${escapeHtml(label)}</div><div class="slide-lines">${escapeHtml(partLines.join("\n"))}</div>`;
         item.addEventListener("click", () => selectSlidePart(slideIdx, partIdx));
         slideListEl.appendChild(item);
+        if (isActive) activeItem = item;
       });
     });
     updateSlideNavLabel();
+    // Keep the highlighted page in view as the operator arrow-steps/Prev-
+    // Nexts through a song, so what's on screen never scrolls out of sight.
+    scrollActiveIntoView(activeItem);
   }
 
   function updateSlideNavLabel() {
