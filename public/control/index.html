@@ -33,6 +33,7 @@
   <nav id="tabs">
     <button class="tab-btn active" data-tab="scripture">Scripture</button>
     <button class="tab-btn" data-tab="songs">Songs</button>
+    <button class="tab-btn" data-tab="setlist">Setlist</button>
     <button class="tab-btn" data-tab="announcements">Announcements</button>
     <button class="tab-btn" data-tab="preview">Preview</button>
   </nav>
@@ -116,6 +117,21 @@
         <div id="songEditStatus" class="save-status"></div>
       </div>
     </div>
+  </section>
+
+  <!-- ===================== SETLIST ===================== -->
+  <section id="tab-setlist" class="tab-panel">
+    <div class="scripture-sticky-header">
+      <div class="song-detail-header">
+        <h3>Today's setlist</h3>
+      </div>
+    </div>
+    <div id="setlistList" class="results-list scrollable-results"></div>
+    <p class="preview-hint">
+      Build this ahead of the service from the Songs tab (the + button next to each
+      song) — arranged in order, then just click a song here to jump straight to it
+      without searching.
+    </p>
   </section>
 
   <!-- ===================== ANNOUNCEMENTS ===================== -->

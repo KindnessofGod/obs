@@ -239,20 +239,22 @@
 
   // Scrolls the currently-highlighted result/slide row into view as the
   // operator steps through verses/slides, so what's actually on screen
-  // never scrolls out of sight and needs a manual scroll to find. A plain
-  // scrollIntoView isn't enough here: the results list sits right below a
-  // `position: sticky` header (search box, nav controls, etc.) within the
-  // same scrolling panel, so it could tuck an item's top edge exactly under
-  // that header, hiding it behind it. scroll-margin-top (read by
-  // scrollIntoView's alignment) reserves that header's actual current
-  // height so the item lands fully visible below it instead.
+  // never scrolls out of sight and needs a manual scroll to find. Centers
+  // it vertically (rather than just nudging it to the nearest edge) so
+  // there's always context above and below, not the item sitting right on
+  // the boundary. A plain scrollIntoView isn't enough here: the results
+  // list sits right below a `position: sticky` header (search box, nav
+  // controls, etc.) within the same scrolling panel, so it could tuck an
+  // item's top edge exactly under that header, hiding it behind it.
+  // scroll-margin-top (read by scrollIntoView's alignment) reserves that
+  // header's actual current height so the item never lands behind it.
   function scrollActiveIntoView(item) {
     if (!item) return;
     const list = item.parentElement;
     const header = list && list.previousElementSibling;
     const headerHeight = header && header.classList.contains("scripture-sticky-header") ? header.getBoundingClientRect().height : 0;
     item.style.scrollMarginTop = headerHeight ? `${headerHeight}px` : "";
-    item.scrollIntoView({ block: "nearest" });
+    item.scrollIntoView({ block: "center" });
   }
 
   // ============================================================
@@ -565,6 +567,7 @@
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
     if (name === "songs") ensureSongsLoaded();
+    if (name === "setlist") ensureSongsLoaded().then(renderSetlist);
     if (name === "announcements") loadAnnouncements();
     if (name === "preview") pushPreview();
   }
@@ -1346,11 +1349,26 @@
       return;
     }
     matches.forEach((s) => {
-      const item = document.createElement("button");
-      item.type = "button";
+      const item = document.createElement("div");
       item.className = "result-item song-item";
-      item.innerHTML = `<span>${escapeHtml(s.title)}</span>`;
-      item.addEventListener("click", () => openSong(s.id));
+      const titleBtn = document.createElement("button");
+      titleBtn.type = "button";
+      titleBtn.className = "song-item-title";
+      titleBtn.textContent = s.title;
+      titleBtn.addEventListener("click", () => openSong(s.id));
+      const inSetlist = setlist.includes(s.id);
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "add-to-setlist-btn";
+      addBtn.title = inSetlist ? "Already in setlist" : "Add to setlist";
+      addBtn.textContent = inSetlist ? "✓" : "+";
+      addBtn.disabled = inSetlist;
+      addBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        addToSetlist(s.id);
+      });
+      item.appendChild(titleBtn);
+      item.appendChild(addBtn);
       songListEl.appendChild(item);
     });
   }
@@ -1668,6 +1686,132 @@
     } finally {
       deleteSongBtn.disabled = false;
     }
+  });
+
+  // ============================================================
+  // Setlist - an ordered, pre-built list of songs for the service, so the
+  // operator can click straight through instead of searching for each song
+  // live. Server-persisted (data/setlist.json via GET/PUT /api/setlist) so
+  // it's the same across any open control window and survives a restart.
+  // ============================================================
+
+  const setlistListEl = document.getElementById("setlistList");
+  let setlist = []; // array of song ids, in order
+
+  async function loadSetlist() {
+    try {
+      const res = await fetch("/api/setlist");
+      const data = await res.json();
+      setlist = Array.isArray(data.songIds) ? data.songIds : [];
+    } catch {
+      setlist = [];
+    }
+  }
+
+  async function saveSetlist() {
+    try {
+      const res = await fetch("/api/setlist", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ songIds: setlist }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setlist = Array.isArray(data.songIds) ? data.songIds : setlist;
+      }
+    } catch {
+      // network hiccup; local state stays as the operator left it, next
+      // successful save reconciles it with the server
+    }
+  }
+
+  function renderSetlist() {
+    setlistListEl.innerHTML = "";
+    if (setlist.length === 0) {
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = "Nothing added yet — use the + button next to a song in the Songs tab.";
+      setlistListEl.appendChild(hint);
+      return;
+    }
+    setlist.forEach((id, idx) => {
+      const song = songsIndex.find((s) => s.id === id);
+      const row = document.createElement("div");
+      row.className = "result-item setlist-item";
+      const titleBtn = document.createElement("button");
+      titleBtn.type = "button";
+      titleBtn.className = "song-item-title";
+      titleBtn.textContent = `${idx + 1}. ${song ? song.title : "(missing song)"}`;
+      titleBtn.disabled = !song;
+      titleBtn.addEventListener("click", () => {
+        switchTab("songs");
+        openSong(id);
+      });
+      const actions = document.createElement("div");
+      actions.className = "setlist-item-actions";
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.title = "Move up";
+      upBtn.textContent = "▲";
+      upBtn.disabled = idx === 0;
+      upBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        moveInSetlist(idx, -1);
+      });
+      const downBtn = document.createElement("button");
+      downBtn.type = "button";
+      downBtn.title = "Move down";
+      downBtn.textContent = "▼";
+      downBtn.disabled = idx === setlist.length - 1;
+      downBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        moveInSetlist(idx, 1);
+      });
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.title = "Remove from setlist";
+      removeBtn.textContent = "✕";
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeFromSetlist(id);
+      });
+      actions.appendChild(upBtn);
+      actions.appendChild(downBtn);
+      actions.appendChild(removeBtn);
+      row.appendChild(titleBtn);
+      row.appendChild(actions);
+      setlistListEl.appendChild(row);
+    });
+  }
+
+  async function addToSetlist(id) {
+    if (setlist.includes(id)) return;
+    setlist.push(id);
+    await saveSetlist();
+    renderSetlist();
+    renderSongList(songSearchEl.value);
+  }
+
+  async function removeFromSetlist(id) {
+    setlist = setlist.filter((sid) => sid !== id);
+    await saveSetlist();
+    renderSetlist();
+    renderSongList(songSearchEl.value);
+  }
+
+  async function moveInSetlist(idx, delta) {
+    const target = idx + delta;
+    if (target < 0 || target >= setlist.length) return;
+    [setlist[idx], setlist[target]] = [setlist[target], setlist[idx]];
+    await saveSetlist();
+    renderSetlist();
+  }
+
+  // Loaded once at startup; if the songs list had already rendered before
+  // this resolves (unlikely, but possible on a fast tab switch right after
+  // page load), refresh it so the +/✓ button state reflects reality.
+  loadSetlist().then(() => {
+    if (songsLoaded) renderSongList(songSearchEl.value);
   });
 
   // ============================================================

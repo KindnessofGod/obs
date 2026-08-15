@@ -513,10 +513,49 @@ input[type="text"]:focus, textarea:focus {
   line-height: 1.35;
 }
 
-.result-item.song-item {
+.result-item.song-item,
+.result-item.setlist-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+.song-item-title {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.song-item-title:disabled {
+  color: var(--text-dim);
+  cursor: default;
+  font-style: italic;
+}
+.add-to-setlist-btn {
+  flex: none;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+.add-to-setlist-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setlist-item-actions {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+.setlist-item-actions button {
+  padding: 5px 8px;
+  font-size: 11px;
 }
 
 .result-item.slide-item .slide-label {

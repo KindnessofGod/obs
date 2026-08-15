@@ -13,6 +13,7 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const SONGS_DIR = path.join(DATA_DIR, "songs");
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements", "announcements.json");
 const SCRIPTURE_BOOKMARKS_FILE = path.join(DATA_DIR, "scripture-bookmarks", "bookmarks.json");
+const SETLIST_FILE = path.join(DATA_DIR, "setlist.json");
 const BACKGROUNDS_DIR = path.join(DATA_DIR, "backgrounds");
 
 const app = express();
@@ -148,6 +149,34 @@ app.post("/api/songs/import", upload.single("file"), async (req, res) => {
   } finally {
     fs.unlink(req.file.path, () => {});
   }
+});
+
+// ---- Setlist ----
+// A single ordered list of song ids, prepared ahead of a service so the
+// operator can click straight through it instead of searching for each
+// song live. Deliberately just an ordered array, not per-slide-type or
+// timestamped - one "today's plan" at a time, replaced wholesale on each save.
+
+app.get("/api/setlist", (req, res) => {
+  if (!fs.existsSync(SETLIST_FILE)) return res.json({ songIds: [] });
+  res.json(JSON.parse(fs.readFileSync(SETLIST_FILE, "utf8")));
+});
+
+app.put("/api/setlist", (req, res) => {
+  const { songIds } = req.body || {};
+  if (!Array.isArray(songIds) || !songIds.every((id) => typeof id === "string")) {
+    return res.status(400).json({ error: "songIds must be an array of strings" });
+  }
+  // Drop any id that no longer resolves to a real song (e.g. deleted via the
+  // song editor since being added to the setlist), so the list can't
+  // silently accumulate dead entries.
+  const existingIds = migration.loadExistingSongIds();
+  const cleaned = songIds.filter((id) => existingIds.has(id));
+  const dir = path.dirname(SETLIST_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const result = { songIds: cleaned };
+  fs.writeFileSync(SETLIST_FILE, JSON.stringify(result, null, 2));
+  res.json(result);
 });
 
 // ---- Announcements ----
