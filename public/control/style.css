@@ -235,6 +235,10 @@ input[type="text"]:focus, textarea:focus {
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
+.layout-controls-heading {
+  margin-top: 18px;
+  font-size: 13px;
+}
 .layout-group {
   margin-bottom: 12px;
 }

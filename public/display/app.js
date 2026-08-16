@@ -64,6 +64,18 @@
       );
     }
 
+    if (slideType === "songtitle") {
+      // Automatic intro card shown before a song's first lyric slide -
+      // title + (by default) "LoveWorld Singers", since there are no other
+      // singers to distinguish - see control/app.js's TITLE_CARD_SUBTITLE.
+      return (
+        '<div class="slide slide-songtitle">' +
+        '<div class="songtitle-title">' + escapeHtml(content.title) + "</div>" +
+        (content.subtitle ? '<div class="songtitle-subtitle">' + escapeHtml(content.subtitle) + "</div>" : "") +
+        "</div>"
+      );
+    }
+
     if (slideType === "announcement") {
       return (
         '<div class="slide slide-announcement">' +
@@ -156,15 +168,26 @@
   var TEXT_ALIGN_JUSTIFY = { top: "flex-start", middle: "center", bottom: "flex-end" };
   var TEXT_HALIGN_ITEMS = { left: "flex-start", center: "center", right: "flex-end" };
 
-  // Applies operator-configured dimension/style overrides. Any field left
-  // null/undefined falls back to the CSS default (see style.css) - a
-  // background height of null specifically means "auto-fit to the real
-  // image", handled via the has-bg-aspect class above rather than a fixed
-  // --bg-height value. Font family/bold/all-caps/vertical-align similarly
-  // fall back to each slide type's own CSS defaults when unset, rather than
-  // forcing every slide to look the same.
-  function applyLayout(layout) {
-    layout = layout || {};
+  // Two independent layout sources: `layout` sizes/positions the shared
+  // lower-third box for scripture/lyric/announcement; `titleCardLayout` does
+  // the same for the automatic song-title-card slide. Only one is ever
+  // "active" at a time (whichever matches the slide currently on screen) -
+  // see applyActiveLayout, called on every paint() with the slideType being
+  // painted, and again whenever either layout itself changes so a mid-song
+  // adjustment still lands correctly on whichever one is showing.
+  var currentLayout = {};
+  var currentTitleCardLayout = {};
+
+  // Applies operator-configured dimension/style overrides for whichever
+  // layout applies to `slideType`. Any field left null/undefined falls back
+  // to the CSS default (see style.css) - a background height of null
+  // specifically means "auto-fit to the real image", handled via the
+  // has-bg-aspect class above rather than a fixed --bg-height value. Font
+  // family/bold/all-caps/vertical-align similarly fall back to each slide
+  // type's own CSS defaults when unset, rather than forcing every slide to
+  // look the same.
+  function applyActiveLayout(slideType) {
+    var layout = (slideType === "songtitle" ? currentTitleCardLayout : currentLayout) || {};
     var root = document.documentElement.style;
 
     root.setProperty("--bg-width", (typeof layout.bgWidthPct === "number" ? layout.bgWidthPct : 100) + "vw");
@@ -197,9 +220,20 @@
     root.setProperty("--content-text-transform", layout.allCaps ? "uppercase" : "none");
   }
 
+  function applyLayout(layout) {
+    currentLayout = layout || {};
+    applyActiveLayout(currentSlideType);
+  }
+
+  function applyTitleCardLayout(layout) {
+    currentTitleCardLayout = layout || {};
+    applyActiveLayout(currentSlideType);
+  }
+
   function paint(slideType, content) {
     ltContent.innerHTML = buildSlideHtml(slideType, content);
     applyBackground(content);
+    applyActiveLayout(slideType);
   }
 
   // Full entrance: bar slides/fades up from nothing.
@@ -284,6 +318,7 @@
     // Sent on every fresh connection so a late-joining display re-syncs.
     applyTextScale(msg.textScale);
     applyLayout(msg.layout);
+    applyTitleCardLayout(msg.titleCardLayout);
     if (msg.visible && msg.current && msg.current.slideType) {
       currentSlideType = msg.current.slideType;
       showEntrance(msg.current.slideType, msg.current.content);
@@ -315,6 +350,9 @@
         break;
       case "layout":
         applyLayout(msg.layout);
+        break;
+      case "titleCardLayout":
+        applyTitleCardLayout(msg.layout);
         break;
       default:
         console.warn("[display] unknown message type:", msg.type);

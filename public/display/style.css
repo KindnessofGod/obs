@@ -223,6 +223,31 @@ html, body {
   color: #f4e2a1;
 }
 
+/* Song title card ----------------------------------------------------------
+   Automatic intro card shown before a song's first lyric slide - reuses the
+   same .lt-bg/.lt-content box as every other slide type, just sized/
+   positioned via its own independent titleCardLayout (see display/app.js
+   and control/app.js) rather than the shared scripture/lyric/announcement
+   one, so resizing this card never moves those. */
+
+.slide-songtitle .songtitle-title {
+  font-family: var(--content-font-family, -apple-system, "Segoe UI", Roboto, sans-serif);
+  font-weight: var(--content-font-weight, 800);
+  text-transform: var(--content-text-transform, none);
+  font-size: calc(clamp(28px, 3.6vw, 56px) * var(--text-scale, 1));
+  line-height: 1.2;
+  margin-bottom: 0.5vh;
+}
+
+.slide-songtitle .songtitle-subtitle {
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-weight: 700;
+  font-size: calc(clamp(14px, 1.5vw, 24px) * var(--text-scale, 1));
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f4e2a1;
+}
+
 /* Announcement ---------------------------------------------------------------- */
 
 .slide-announcement .announcement-title {

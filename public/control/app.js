@@ -58,7 +58,8 @@
       // display (and any other open control window) picks them up even if
       // the server was restarted since they were last set.
       send({ type: "textScale", scale: textScale });
-      send({ type: "layout", layout });
+      send({ type: "layout", layout: layoutCtl.value });
+      send({ type: "titleCardLayout", layout: titleCardLayoutCtl.value });
     });
 
     ws.addEventListener("close", () => {
@@ -125,6 +126,7 @@
     let text = "";
     if (slideType === "scripture") text = `${content.reference} (${(content.translation || "").toUpperCase()})`;
     else if (slideType === "lyric") text = `${content.songTitle} — ${content.slideLabel}`;
+    else if (slideType === "songtitle") text = `${content.title} — Title card`;
     else if (slideType === "announcement") text = content.title;
     liveBannerEl.innerHTML = `<span class="live-kind">${slideType}</span>${escapeHtml(text)}`;
   }
@@ -135,10 +137,13 @@
       if (msg.visible && msg.current) reconcileLiveState(msg.current);
       if (typeof msg.textScale === "number") syncTextScale(msg.textScale);
       if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
+      if (msg.titleCardLayout && typeof msg.titleCardLayout === "object") syncTitleCardLayout(msg.titleCardLayout);
     } else if (msg.type === "textScale") {
       if (typeof msg.scale === "number") syncTextScale(msg.scale);
     } else if (msg.type === "layout") {
       if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
+    } else if (msg.type === "titleCardLayout") {
+      if (msg.layout && typeof msg.layout === "object") syncTitleCardLayout(msg.layout);
     } else if (msg.type === "show") {
       renderLiveBanner(true, { slideType: msg.slideType, content: msg.content });
       reconcileLiveState({ slideType: msg.slideType, content: msg.content });
@@ -262,13 +267,14 @@
   // ============================================================
 
   let availableBackgrounds = [];
-  let selectedBackgrounds = { scripture: null, lyric: null, announcement: null };
-  let lastContent = { scripture: null, lyric: null, announcement: null };
+  let selectedBackgrounds = { scripture: null, lyric: null, announcement: null, songtitle: null };
+  let lastContent = { scripture: null, lyric: null, announcement: null, songtitle: null };
 
   const bgSelectEls = {
     scripture: document.getElementById("scriptureBgSelect"),
     lyric: document.getElementById("lyricBgSelect"),
     announcement: document.getElementById("announcementBgSelect"),
+    songtitle: document.getElementById("titleCardBgSelect"),
   };
 
   async function loadBackgrounds() {
@@ -286,7 +292,7 @@
     } catch {
       saved = null;
     }
-    selectedBackgrounds = { scripture: null, lyric: null, announcement: null, ...(saved || {}) };
+    selectedBackgrounds = { scripture: null, lyric: null, announcement: null, songtitle: null, ...(saved || {}) };
 
     // Nothing chosen yet but exactly one background exists (the common case,
     // one custom lower-third graphic) — auto-select it so it works immediately.
@@ -385,6 +391,7 @@
     let text = "";
     if (slideType === "scripture") text = `${content.reference} (${(content.translation || "").toUpperCase()})`;
     else if (slideType === "lyric") text = `${content.songTitle} — ${content.slideLabel}`;
+    else if (slideType === "songtitle") text = `${content.title} — Title card`;
     else if (slideType === "announcement") text = content.title;
     stagedTextEl.innerHTML = `<span class="live-kind">${slideType}</span>${escapeHtml(text)}`;
     displayLiveBtn.disabled = false;
@@ -410,7 +417,8 @@
   previewFrame.addEventListener("load", () => {
     pushPreview();
     postToPreview({ type: "textScale", scale: textScale });
-    postToPreview({ type: "layout", layout });
+    postToPreview({ type: "layout", layout: layoutCtl.value });
+    postToPreview({ type: "titleCardLayout", layout: titleCardLayoutCtl.value });
   });
 
   function stage(slideType, content) {
@@ -450,7 +458,9 @@
   // Layout: independent background-box and text-box dimensions. Background
   // size and text size are deliberately separate controls (per operator
   // request) so e.g. a bigger background graphic doesn't force bigger text,
-  // or vice versa.
+  // or vice versa. Two independent instances of this exist - one for the
+  // shared scripture/lyric/announcement lower-third box, one for the
+  // automatic song-title-card slide - so resizing one never moves the other.
   // ============================================================
 
   const LAYOUT_DEFAULTS = {
@@ -465,95 +475,167 @@
     allCaps: false,
   };
 
-  const bgWidthRange = document.getElementById("bgWidthRange");
-  const bgWidthValueEl = document.getElementById("bgWidthValue");
-  const bgHeightAutoCheckbox = document.getElementById("bgHeightAutoCheckbox");
-  const bgHeightRange = document.getElementById("bgHeightRange");
-  const bgHeightValueEl = document.getElementById("bgHeightValue");
-  const textWidthRange = document.getElementById("textWidthRange");
-  const textWidthValueEl = document.getElementById("textWidthValue");
-  const textHeightRange = document.getElementById("textHeightRange");
-  const textHeightValueEl = document.getElementById("textHeightValue");
-  const textAlignSelect = document.getElementById("textAlignSelect");
-  const textHAlignSelect = document.getElementById("textHAlignSelect");
-  const fontFamilySelect = document.getElementById("fontFamilySelect");
-  const boldCheckbox = document.getElementById("boldCheckbox");
-  const allCapsCheckbox = document.getElementById("allCapsCheckbox");
-  const layoutResetBtn = document.getElementById("layoutResetBtn");
+  const TITLE_CARD_LAYOUT_DEFAULTS = {
+    bgWidthPct: 55,
+    bgHeightPct: null,
+    textWidthPct: 55,
+    textHeightPct: 20,
+    textAlign: "middle",
+    textHAlign: "center",
+    fontFamily: "default",
+    bold: true,
+    allCaps: true,
+  };
 
-  let layout = { ...LAYOUT_DEFAULTS };
-  {
-    let saved = null;
-    try {
-      saved = JSON.parse(localStorage.getItem("obs-control:layout") || "null");
-    } catch {
-      saved = null;
+  // Builds one independent layout controller bound to a set of DOM element
+  // ids, a localStorage key, and a WS message type - `layout`/`setLayout`/
+  // `syncLayout` below are the "main" instance; titleCardLayout's is a
+  // second, otherwise-identical instance for the song title card.
+  function createLayoutController(ids, defaults, storageKey, wsType) {
+    const els = {};
+    for (const [key, id] of Object.entries(ids)) els[key] = document.getElementById(id);
+
+    let current = { ...defaults };
+    {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      } catch {
+        saved = null;
+      }
+      if (saved && typeof saved === "object") current = { ...defaults, ...saved };
     }
-    if (saved && typeof saved === "object") layout = { ...LAYOUT_DEFAULTS, ...saved };
+
+    function render() {
+      els.bgWidthRange.value = current.bgWidthPct;
+      els.bgWidthValue.textContent = current.bgWidthPct + "%";
+
+      const autoHeight = current.bgHeightPct == null;
+      els.bgHeightAutoCheckbox.checked = autoHeight;
+      els.bgHeightRange.disabled = autoHeight;
+      els.bgHeightRange.value = autoHeight ? 28 : current.bgHeightPct;
+      els.bgHeightValue.textContent = autoHeight ? "auto" : current.bgHeightPct + "%";
+
+      els.textWidthRange.value = current.textWidthPct;
+      els.textWidthValue.textContent = current.textWidthPct + "%";
+      els.textHeightRange.value = current.textHeightPct;
+      els.textHeightValue.textContent = current.textHeightPct + "%";
+
+      els.textAlignSelect.value = current.textAlign;
+      els.textHAlignSelect.value = current.textHAlign;
+      els.fontFamilySelect.value = current.fontFamily;
+      els.boldCheckbox.checked = current.bold;
+      els.allCapsCheckbox.checked = current.allCaps;
+    }
+
+    function pushToPreview() {
+      postToPreview({ type: wsType, layout: current });
+    }
+
+    function set(partial) {
+      current = { ...current, ...partial };
+      localStorage.setItem(storageKey, JSON.stringify(current));
+      render();
+      send({ type: wsType, layout: current });
+      pushToPreview();
+      // Font/width changes affect how many lines a slide's text takes up, so
+      // keep the song slide list's pagination in sync too.
+      if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
+    }
+
+    // Reflects a layout that originated elsewhere (server's initial `state`,
+    // or another open /control window) without re-broadcasting.
+    function sync(next) {
+      current = { ...defaults, ...(next || {}) };
+      localStorage.setItem(storageKey, JSON.stringify(current));
+      render();
+      pushToPreview();
+      if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
+    }
+
+    els.bgWidthRange.addEventListener("input", () => set({ bgWidthPct: Number(els.bgWidthRange.value) }));
+    els.bgHeightRange.addEventListener("input", () => set({ bgHeightPct: Number(els.bgHeightRange.value) }));
+    els.bgHeightAutoCheckbox.addEventListener("change", () => {
+      set({ bgHeightPct: els.bgHeightAutoCheckbox.checked ? null : Number(els.bgHeightRange.value) });
+    });
+    els.textWidthRange.addEventListener("input", () => set({ textWidthPct: Number(els.textWidthRange.value) }));
+    els.textHeightRange.addEventListener("input", () => set({ textHeightPct: Number(els.textHeightRange.value) }));
+    els.textAlignSelect.addEventListener("change", () => set({ textAlign: els.textAlignSelect.value }));
+    els.textHAlignSelect.addEventListener("change", () => set({ textHAlign: els.textHAlignSelect.value }));
+    els.fontFamilySelect.addEventListener("change", () => set({ fontFamily: els.fontFamilySelect.value }));
+    els.boldCheckbox.addEventListener("change", () => set({ bold: els.boldCheckbox.checked }));
+    els.allCapsCheckbox.addEventListener("change", () => set({ allCaps: els.allCapsCheckbox.checked }));
+    els.resetBtn.addEventListener("click", () => set({ ...defaults }));
+
+    render();
+
+    return {
+      get value() {
+        return current;
+      },
+      set,
+      sync,
+    };
   }
 
-  function renderLayoutControls() {
-    bgWidthRange.value = layout.bgWidthPct;
-    bgWidthValueEl.textContent = layout.bgWidthPct + "%";
+  const layoutCtl = createLayoutController(
+    {
+      bgWidthRange: "bgWidthRange",
+      bgWidthValue: "bgWidthValue",
+      bgHeightAutoCheckbox: "bgHeightAutoCheckbox",
+      bgHeightRange: "bgHeightRange",
+      bgHeightValue: "bgHeightValue",
+      textWidthRange: "textWidthRange",
+      textWidthValue: "textWidthValue",
+      textHeightRange: "textHeightRange",
+      textHeightValue: "textHeightValue",
+      textAlignSelect: "textAlignSelect",
+      textHAlignSelect: "textHAlignSelect",
+      fontFamilySelect: "fontFamilySelect",
+      boldCheckbox: "boldCheckbox",
+      allCapsCheckbox: "allCapsCheckbox",
+      resetBtn: "layoutResetBtn",
+    },
+    LAYOUT_DEFAULTS,
+    "obs-control:layout",
+    "layout"
+  );
 
-    const autoHeight = layout.bgHeightPct == null;
-    bgHeightAutoCheckbox.checked = autoHeight;
-    bgHeightRange.disabled = autoHeight;
-    bgHeightRange.value = autoHeight ? 28 : layout.bgHeightPct;
-    bgHeightValueEl.textContent = autoHeight ? "auto" : layout.bgHeightPct + "%";
+  const titleCardLayoutCtl = createLayoutController(
+    {
+      bgWidthRange: "tcBgWidthRange",
+      bgWidthValue: "tcBgWidthValue",
+      bgHeightAutoCheckbox: "tcBgHeightAutoCheckbox",
+      bgHeightRange: "tcBgHeightRange",
+      bgHeightValue: "tcBgHeightValue",
+      textWidthRange: "tcTextWidthRange",
+      textWidthValue: "tcTextWidthValue",
+      textHeightRange: "tcTextHeightRange",
+      textHeightValue: "tcTextHeightValue",
+      textAlignSelect: "tcTextAlignSelect",
+      textHAlignSelect: "tcTextHAlignSelect",
+      fontFamilySelect: "tcFontFamilySelect",
+      boldCheckbox: "tcBoldCheckbox",
+      allCapsCheckbox: "tcAllCapsCheckbox",
+      resetBtn: "tcLayoutResetBtn",
+    },
+    TITLE_CARD_LAYOUT_DEFAULTS,
+    "obs-control:titleCardLayout",
+    "titleCardLayout"
+  );
 
-    textWidthRange.value = layout.textWidthPct;
-    textWidthValueEl.textContent = layout.textWidthPct + "%";
-    textHeightRange.value = layout.textHeightPct;
-    textHeightValueEl.textContent = layout.textHeightPct + "%";
-
-    textAlignSelect.value = layout.textAlign;
-    textHAlignSelect.value = layout.textHAlign;
-    fontFamilySelect.value = layout.fontFamily;
-    boldCheckbox.checked = layout.bold;
-    allCapsCheckbox.checked = layout.allCaps;
-  }
-
-  function pushLayoutToPreview() {
-    postToPreview({ type: "layout", layout });
-  }
-
+  // `layout`/`setLayout`/`syncLayout` kept as the names the rest of this
+  // file (WS open handler, handleServerMessage, previewFrame load) already
+  // uses for the main (non-title-card) layout.
   function setLayout(partial) {
-    layout = { ...layout, ...partial };
-    localStorage.setItem("obs-control:layout", JSON.stringify(layout));
-    renderLayoutControls();
-    send({ type: "layout", layout });
-    pushLayoutToPreview();
-    // Font/width changes affect how many lines a slide's text takes up, so
-    // keep the song slide list's pagination in sync too.
-    if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
+    layoutCtl.set(partial);
   }
-
-  // Reflects a layout that originated elsewhere (server's initial `state`, or
-  // another open /control window) without re-broadcasting.
   function syncLayout(next) {
-    layout = { ...LAYOUT_DEFAULTS, ...(next || {}) };
-    localStorage.setItem("obs-control:layout", JSON.stringify(layout));
-    renderLayoutControls();
-    pushLayoutToPreview();
-    if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
+    layoutCtl.sync(next);
   }
-
-  bgWidthRange.addEventListener("input", () => setLayout({ bgWidthPct: Number(bgWidthRange.value) }));
-  bgHeightRange.addEventListener("input", () => setLayout({ bgHeightPct: Number(bgHeightRange.value) }));
-  bgHeightAutoCheckbox.addEventListener("change", () => {
-    setLayout({ bgHeightPct: bgHeightAutoCheckbox.checked ? null : Number(bgHeightRange.value) });
-  });
-  textWidthRange.addEventListener("input", () => setLayout({ textWidthPct: Number(textWidthRange.value) }));
-  textHeightRange.addEventListener("input", () => setLayout({ textHeightPct: Number(textHeightRange.value) }));
-  textAlignSelect.addEventListener("change", () => setLayout({ textAlign: textAlignSelect.value }));
-  textHAlignSelect.addEventListener("change", () => setLayout({ textHAlign: textHAlignSelect.value }));
-  fontFamilySelect.addEventListener("change", () => setLayout({ fontFamily: fontFamilySelect.value }));
-  boldCheckbox.addEventListener("change", () => setLayout({ bold: boldCheckbox.checked }));
-  allCapsCheckbox.addEventListener("change", () => setLayout({ allCaps: allCapsCheckbox.checked }));
-  layoutResetBtn.addEventListener("click", () => setLayout({ ...LAYOUT_DEFAULTS }));
-
-  renderLayoutControls();
+  function syncTitleCardLayout(next) {
+    titleCardLayoutCtl.sync(next);
+  }
 
   // ============================================================
   // Tabs
@@ -709,14 +791,14 @@
   // .lt-content's own box width (--text-width, set from layout.textWidthPct)
   // minus its horizontal padding (6vw + 5vw - see display/style.css .lt-content).
   function availableTextWidthPx() {
-    const boxWidthPx = ((layout.textWidthPct != null ? layout.textWidthPct : 88) / 100) * REFERENCE_CANVAS_WIDTH_PX;
+    const boxWidthPx = ((layoutCtl.value.textWidthPct != null ? layoutCtl.value.textWidthPct : 88) / 100) * REFERENCE_CANVAS_WIDTH_PX;
     const horizontalPaddingPx = 0.11 * REFERENCE_CANVAS_WIDTH_PX;
     return Math.max(40, boxWidthPx - horizontalPaddingPx);
   }
 
   function measureFontFor(slideType, fontPx) {
-    const family = FONT_FAMILY_STACKS[layout.fontFamily] || SLIDE_DEFAULT_FONT[slideType];
-    const weight = layout.bold ? 700 : SLIDE_DEFAULT_WEIGHT[slideType];
+    const family = FONT_FAMILY_STACKS[layoutCtl.value.fontFamily] || SLIDE_DEFAULT_FONT[slideType];
+    const weight = layoutCtl.value.bold ? 700 : SLIDE_DEFAULT_WEIGHT[slideType];
     const style = SLIDE_ITALIC[slideType] ? "italic" : "normal";
     return `${style} ${weight} ${fontPx}px ${family}`;
   }
@@ -759,7 +841,7 @@
     if (!trimmed) return [""];
 
     const originalWords = trimmed.split(/\s+/);
-    const measureWords = layout.allCaps ? originalWords.map((w) => w.toUpperCase()) : originalWords;
+    const measureWords = layoutCtl.value.allCaps ? originalWords.map((w) => w.toUpperCase()) : originalWords;
     const fontPx = clampPx(24, 0.03, 46) * textScale;
     const font = measureFontFor("scripture", fontPx);
     const wrappedLines = wrapIndicesToLines(measureWords, font, availableTextWidthPx());
@@ -788,7 +870,7 @@
     function renderedRowsFor(line) {
       const words = String(line || "").trim().split(/\s+/).filter(Boolean);
       if (words.length === 0) return 1;
-      const measureWords = layout.allCaps ? words.map((w) => w.toUpperCase()) : words;
+      const measureWords = layoutCtl.value.allCaps ? words.map((w) => w.toUpperCase()) : words;
       return Math.max(1, wrapIndicesToLines(measureWords, font, maxWidthPx).length);
     }
 
@@ -1335,6 +1417,14 @@
     return { songTitle: currentSong.title, slideLabel: slide.label, lines: parts[partIndex], partIndex, totalParts: parts.length };
   }
 
+  // No other singers are ever credited on the title card - see the operator's
+  // explicit instruction that LoveWorld Singers is always the default.
+  const TITLE_CARD_SUBTITLE = "LoveWorld Singers";
+
+  function titleCardContentForSong(song) {
+    return { title: song.title, subtitle: TITLE_CARD_SUBTITLE };
+  }
+
   async function ensureSongsLoaded() {
     if (songsLoaded) return;
     try {
@@ -1441,9 +1531,10 @@
     songDetailEl.hidden = false;
     songDetailTitleEl.textContent = currentSong.title;
     renderSlideList();
-    if (!silent && currentSong.slides.length > 0) {
-      selectSlide(0);
-    }
+    // A song always opens on its automatic title card first (see
+    // selectTitleCard) - matches how the reference title-card design is
+    // meant to be shown before the lyrics start.
+    if (!silent) selectTitleCard();
   }
 
   document.getElementById("backToSongsBtn").addEventListener("click", () => {
@@ -1460,6 +1551,19 @@
   function renderSlideList() {
     slideListEl.innerHTML = "";
     let activeItem = null;
+
+    // The automatic title card is always the first navigable page (index
+    // -1) - not part of currentSong.slides/the saved song data, generated
+    // fresh from the title every time (see titleCardContentForSong).
+    const titleCardItem = document.createElement("button");
+    titleCardItem.type = "button";
+    const isTitleCardActive = currentSlideIndex === -1;
+    titleCardItem.className = "result-item slide-item" + (isTitleCardActive ? " active" : "");
+    titleCardItem.innerHTML = `<div class="slide-label">Title card</div><div class="slide-lines">${escapeHtml(currentSong.title)}\n${escapeHtml(TITLE_CARD_SUBTITLE)}</div>`;
+    titleCardItem.addEventListener("click", () => selectTitleCard());
+    slideListEl.appendChild(titleCardItem);
+    if (isTitleCardActive) activeItem = titleCardItem;
+
     (currentSong.slides || []).forEach((slide, slideIdx) => {
       const parts = splitLinesIntoParts(slide.lines);
       parts.forEach((partLines, partIdx) => {
@@ -1481,8 +1585,12 @@
   }
 
   function updateSlideNavLabel() {
-    if (!currentSong || currentSlideIndex < 0) {
+    if (!currentSong) {
       currentSlideLabelEl.textContent = "";
+      return;
+    }
+    if (currentSlideIndex === -1) {
+      currentSlideLabelEl.textContent = "Title card";
       return;
     }
     const slide = currentSong.slides[currentSlideIndex];
@@ -1515,11 +1623,31 @@
     selectSlidePart(idx, 0);
   }
 
+  // Selects the automatic title card (index -1) - always the first page of
+  // a song, generated fresh from the title rather than stored in its slides.
+  function selectTitleCard() {
+    if (!currentSong) return;
+    currentSlideIndex = -1;
+    currentSlideParts = null;
+    currentSlidePartIndex = 0;
+    const content = titleCardContentForSong(currentSong);
+    currentLyricIsLive = stageOrGoLive("songtitle", content, lyricAutoLive);
+    renderSlideList();
+  }
+
   // Prev/Next: steps within the current slide's parts first (if split),
   // only advancing to an actual different slide once off the start/end of
   // the parts - keeps whatever was already true (live update vs. restage).
+  // Crossing into/out of the title card (index -1) always goes through
+  // selectTitleCard/selectSlide instead, since that's a slideType change
+  // (songtitle <-> lyric), not an in-place update within the same one.
   function stepSlide(delta) {
-    if (!currentSong || currentSlideIndex < 0) return;
+    if (!currentSong) return;
+
+    if (currentSlideIndex === -1) {
+      if (delta > 0 && currentSong.slides.length > 0) selectSlide(0);
+      return;
+    }
 
     if (currentSlideParts && currentSlideParts.length > 1) {
       const nextPart = currentSlidePartIndex + delta;
@@ -1535,7 +1663,12 @@
     }
 
     const targetIdx = currentSlideIndex + delta;
-    if (targetIdx < 0 || targetIdx >= currentSong.slides.length) return;
+    if (targetIdx < 0) {
+      // Stepping back off the first slide's first part returns to the title card.
+      selectTitleCard();
+      return;
+    }
+    if (targetIdx >= currentSong.slides.length) return;
     currentSlideIndex = targetIdx;
     const slide = currentSong.slides[targetIdx];
     currentSlideParts = splitLinesIntoParts(slide.lines);

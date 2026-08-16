@@ -377,7 +377,10 @@ function sanitizeLayout(raw) {
   return layout;
 }
 
-let state = { visible: false, current: null, textScale: 1, layout: {} };
+// layout applies to scripture/lyric/announcement's shared lower-third box;
+// titleCardLayout is a completely independent size/position for the
+// automatic song-title-card slide, so resizing one never moves the other.
+let state = { visible: false, current: null, textScale: 1, layout: {}, titleCardLayout: {} };
 
 function broadcast(message) {
   const payload = JSON.stringify(message);
@@ -394,6 +397,7 @@ wss.on("connection", (ws) => {
       current: state.current,
       textScale: state.textScale,
       layout: state.layout,
+      titleCardLayout: state.titleCardLayout,
     })
   );
 
@@ -410,13 +414,14 @@ wss.on("connection", (ws) => {
         current: { slideType: msg.slideType, content: msg.content },
         textScale: state.textScale,
         layout: state.layout,
+        titleCardLayout: state.titleCardLayout,
       };
       broadcast({ type: "show", slideType: msg.slideType, content: msg.content });
     } else if (msg.type === "update" && msg.content && state.current) {
       state.current.content = msg.content;
       broadcast({ type: "update", content: msg.content });
     } else if (msg.type === "hide") {
-      state = { visible: false, current: state.current, textScale: state.textScale, layout: state.layout };
+      state = { visible: false, current: state.current, textScale: state.textScale, layout: state.layout, titleCardLayout: state.titleCardLayout };
       broadcast({ type: "hide" });
     } else if (msg.type === "textScale" && typeof msg.scale === "number") {
       state.textScale = Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, msg.scale));
@@ -424,6 +429,9 @@ wss.on("connection", (ws) => {
     } else if (msg.type === "layout" && msg.layout && typeof msg.layout === "object") {
       state.layout = sanitizeLayout(msg.layout);
       broadcast({ type: "layout", layout: state.layout });
+    } else if (msg.type === "titleCardLayout" && msg.layout && typeof msg.layout === "object") {
+      state.titleCardLayout = sanitizeLayout(msg.layout);
+      broadcast({ type: "titleCardLayout", layout: state.titleCardLayout });
     }
   });
 });

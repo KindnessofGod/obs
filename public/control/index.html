@@ -80,6 +80,11 @@
         <label for="lyricBgSelect">Background</label>
         <select id="lyricBgSelect"></select>
       </div>
+
+      <div class="bg-picker">
+        <label for="titleCardBgSelect">Title card background</label>
+        <select id="titleCardBgSelect"></select>
+      </div>
     </div>
 
     <div id="songList" class="results-list scrollable-results"></div>
@@ -267,6 +272,87 @@
       </div>
 
       <button id="layoutResetBtn" type="button">Reset to defaults</button>
+    </div>
+
+    <h3 class="layout-controls-heading">Song title card position &amp; size</h3>
+    <p class="preview-hint">
+      Controls the automatic title card shown at the start of every song (song
+      title + "LoveWorld Singers") — kept separate from the sizing above so
+      resizing one never moves the other.
+    </p>
+
+    <div class="layout-controls">
+      <div class="layout-group">
+        <div class="layout-group-title">Background size</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="tcBgWidthRange" min="20" max="150" step="1" />
+          <span class="layout-value" id="tcBgWidthValue">55%</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="tcBgHeightAutoCheckbox" checked />
+          <span>Auto height (match the image's real shape)</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="tcBgHeightRange" min="5" max="80" step="1" disabled />
+          <span class="layout-value" id="tcBgHeightValue">auto</span>
+        </label>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text area size</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="tcTextWidthRange" min="20" max="100" step="1" />
+          <span class="layout-value" id="tcTextWidthValue">55%</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="tcTextHeightRange" min="5" max="80" step="1" />
+          <span class="layout-value" id="tcTextHeightValue">20%</span>
+        </label>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text style</div>
+        <label class="layout-row">
+          <span>Vertical position</span>
+          <select id="tcTextAlignSelect">
+            <option value="top">Top</option>
+            <option value="middle">Middle</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Horizontal position</span>
+          <select id="tcTextHAlignSelect">
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Font</span>
+          <select id="tcFontFamilySelect">
+            <option value="default">Default (per slide type)</option>
+            <option value="serif">Serif</option>
+            <option value="sans">Sans-serif</option>
+            <option value="condensed">Condensed</option>
+            <option value="rounded">Rounded</option>
+          </select>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="tcBoldCheckbox" />
+          <span>Bold</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="tcAllCapsCheckbox" />
+          <span>ALL CAPS</span>
+        </label>
+      </div>
+
+      <button id="tcLayoutResetBtn" type="button">Reset to defaults</button>
     </div>
   </section>
 
