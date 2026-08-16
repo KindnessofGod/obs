@@ -1272,6 +1272,8 @@
   const editSongBtn = document.getElementById("editSongBtn");
   const songEditPanelEl = document.getElementById("songEditPanel");
   const songEditTitleInput = document.getElementById("songEditTitleInput");
+  const songEditPasteLyricsEl = document.getElementById("songEditPasteLyrics");
+  const splitLyricsBtn = document.getElementById("splitLyricsBtn");
   const songEditSlidesEl = document.getElementById("songEditSlides");
   const addSlideBtn = document.getElementById("addSlideBtn");
   const saveSongBtn = document.getElementById("saveSongBtn");
@@ -1374,6 +1376,33 @@
   }
 
   songSearchEl.addEventListener("input", () => renderSongList(songSearchEl.value));
+
+  // Creates a blank song on the server, then jumps straight into its editor
+  // (title pre-selected) so the operator can type the real title and lyrics
+  // right away instead of having to save a placeholder first and edit after.
+  const newSongBtn = document.getElementById("newSongBtn");
+  newSongBtn.addEventListener("click", async () => {
+    newSongBtn.disabled = true;
+    try {
+      const res = await fetch("/api/songs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New Song" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "create failed");
+      const song = await res.json();
+      songsLoaded = false;
+      await ensureSongsLoaded();
+      await openSong(song.id, { silent: true });
+      openSongEditor();
+      songEditTitleInput.focus();
+      songEditTitleInput.select();
+    } catch (err) {
+      alert(`Could not create song: ${err.message}`);
+    } finally {
+      newSongBtn.disabled = false;
+    }
+  });
 
   async function openSong(id, opts) {
     const silent = opts && opts.silent;
@@ -1553,6 +1582,7 @@
     if (!currentSong) return;
     editingSlides = currentSong.slides.map((s) => ({ label: s.label, lines: [...s.lines] }));
     songEditTitleInput.value = currentSong.title;
+    songEditPasteLyricsEl.value = ""; // don't carry a leftover paste over from whatever song was edited last
     songEditStatusEl.textContent = "";
     renderSongEditSlides();
     slideListEl.hidden = true;
@@ -1620,6 +1650,38 @@
   addSlideBtn.addEventListener("click", () => {
     syncEditingSlidesFromDom();
     editingSlides.push({ label: `Slide ${editingSlides.length + 1}`, lines: [""] });
+    renderSongEditSlides();
+  });
+
+  function trimBlankEdges(lines) {
+    while (lines.length && lines[0] === "") lines.shift();
+    while (lines.length && lines[lines.length - 1] === "") lines.pop();
+    return lines;
+  }
+
+  // Splits a block of pasted lyrics (e.g. copied straight off a lyrics
+  // site) into slides - one slide per blank-line-separated paragraph, since
+  // that's the near-universal convention lyrics sites use to mark verse/
+  // chorus breaks. Labels are left as generic "Slide N"; the operator can
+  // rename any of them (e.g. to "Verse 1"/"Chorus") after the fact.
+  function splitPastedLyricsIntoSlides(text) {
+    return text
+      .split(/\n\s*\n+/)
+      .map((block) => trimBlankEdges(block.split("\n").map((l) => l.trim())))
+      .filter((lines) => lines.length > 0)
+      .map((lines, i) => ({ label: `Slide ${i + 1}`, lines }));
+  }
+
+  splitLyricsBtn.addEventListener("click", () => {
+    const text = songEditPasteLyricsEl.value;
+    if (!text.trim()) return;
+    const slides = splitPastedLyricsIntoSlides(text);
+    if (slides.length === 0) return;
+    syncEditingSlidesFromDom();
+    const hasExistingContent = editingSlides.some((s) => s.lines.some((l) => l.trim()));
+    if (hasExistingContent && !confirm("Replace the current slides with the pasted lyrics, split into slides?")) return;
+    editingSlides = slides;
+    songEditPasteLyricsEl.value = "";
     renderSongEditSlides();
   });
 

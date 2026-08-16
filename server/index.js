@@ -96,6 +96,24 @@ function isValidSlides(slides) {
   );
 }
 
+// Creates a brand-new song from scratch (as opposed to /api/songs/import,
+// which parses an existing VideoPsalm export). Id is derived from the title
+// the same way the importer does, so manually-created and imported songs
+// share one consistent scheme.
+app.post("/api/songs", (req, res) => {
+  const { title, slides } = req.body || {};
+  if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "title is required" });
+  const finalSlides = slides === undefined ? [{ label: "Slide 1", lines: [""] }] : slides;
+  if (!isValidSlides(finalSlides)) {
+    return res.status(400).json({ error: "slides must be an array of { label: string, lines: string[] }" });
+  }
+  if (!fs.existsSync(SONGS_DIR)) fs.mkdirSync(SONGS_DIR, { recursive: true });
+  const id = migration.uniqueId(migration.slugify(title), migration.loadExistingSongIds());
+  const song = { id, title: title.trim(), slides: finalSlides };
+  fs.writeFileSync(songFilePath(id), JSON.stringify(song, null, 2));
+  res.status(201).json(song);
+});
+
 app.get("/api/songs/:id", (req, res) => {
   const file = songFilePath(req.params.id);
   if (!file) return res.status(400).json({ error: "invalid song id" });

@@ -588,6 +588,22 @@ input[type="text"]:focus, textarea:focus {
   text-align: center;
 }
 
+/* ---- Song search row ---- */
+
+.song-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.song-search-row #songSearch {
+  flex: 1;
+}
+#newSongBtn {
+  flex: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* ---- Song detail ---- */
 
 .song-detail-header {
@@ -616,6 +632,21 @@ input[type="text"]:focus, textarea:focus {
   flex-direction: column;
   gap: 10px;
   padding-bottom: 12px;
+}
+.song-edit-paste-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim, #9aa0aa);
+  border: 1px dashed var(--border, #3a3f4a);
+  border-radius: 6px;
+  padding: 8px;
+}
+.song-edit-paste-row textarea {
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
 }
 .song-edit-title-row {
   display: flex;

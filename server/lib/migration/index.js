@@ -289,4 +289,6 @@ module.exports = {
   loadExistingSongIds,
   readSongFileText,
   importSongsFromDir,
+  slugify,
+  uniqueId,
 };

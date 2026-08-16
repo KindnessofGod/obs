@@ -71,7 +71,10 @@
   <!-- ===================== SONGS ===================== -->
   <section id="tab-songs" class="tab-panel">
     <div class="scripture-sticky-header">
-      <input id="songSearch" type="text" placeholder="Search songs by title…" autocomplete="off" />
+      <div class="song-search-row">
+        <input id="songSearch" type="text" placeholder="Search songs by title…" autocomplete="off" />
+        <button id="newSongBtn" type="button" title="Create a new song from scratch">+ New song</button>
+      </div>
 
       <div class="bg-picker">
         <label for="lyricBgSelect">Background</label>
@@ -105,6 +108,13 @@
           <span>Title</span>
           <input id="songEditTitleInput" type="text" />
         </label>
+        <div class="song-edit-paste-row">
+          <label for="songEditPasteLyrics">Paste full lyrics (leave a blank line between each verse/chorus)</label>
+          <textarea id="songEditPasteLyrics" rows="6" placeholder="Paste the whole song here, straight from wherever you copied it…"></textarea>
+          <div class="btn-row">
+            <button id="splitLyricsBtn" type="button">Split into slides</button>
+          </div>
+        </div>
         <div id="songEditSlides" class="song-edit-slides"></div>
         <div class="btn-row">
           <button id="addSlideBtn" type="button">+ Add slide</button>
