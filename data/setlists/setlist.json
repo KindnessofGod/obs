@@ -1,4 +1,6 @@
 {
+  "id": "setlist",
+  "name": "My Setlist",
   "songIds": [
     "new-song-8",
     "new-song-9",

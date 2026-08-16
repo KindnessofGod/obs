@@ -624,6 +624,9 @@ input[type="text"]:focus, textarea:focus {
   flex: none;
   font-size: 12px;
 }
+.song-detail-header .danger-btn {
+  width: auto;
+}
 
 /* ---- Song editor ---- */
 

@@ -567,7 +567,20 @@
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
     if (name === "songs") ensureSongsLoaded();
-    if (name === "setlist") ensureSongsLoaded().then(renderSetlist);
+    if (name === "setlist") {
+      ensureSongsLoaded().then(() => {
+        if (currentSetlist) {
+          setlistDetailNameEl.textContent = currentSetlist.name;
+          setlistsIndexViewEl.hidden = true;
+          setlistDetailViewEl.hidden = false;
+          renderSetlistDetail();
+        } else {
+          setlistsIndexViewEl.hidden = false;
+          setlistDetailViewEl.hidden = true;
+          renderSetlistsIndex();
+        }
+      });
+    }
     if (name === "announcements") loadAnnouncements();
     if (name === "preview") pushPreview();
   }
@@ -1358,11 +1371,15 @@
       titleBtn.className = "song-item-title";
       titleBtn.textContent = s.title;
       titleBtn.addEventListener("click", () => openSong(s.id));
-      const inSetlist = setlist.includes(s.id);
+      const inSetlist = currentSetlist ? currentSetlist.songIds.includes(s.id) : false;
       const addBtn = document.createElement("button");
       addBtn.type = "button";
       addBtn.className = "add-to-setlist-btn";
-      addBtn.title = inSetlist ? "Already in setlist" : "Add to setlist";
+      addBtn.title = inSetlist
+        ? "Already in setlist"
+        : currentSetlist
+          ? `Add to "${currentSetlist.name}"`
+          : "Open or create a setlist first (Setlist tab)";
       addBtn.textContent = inSetlist ? "✓" : "+";
       addBtn.disabled = inSetlist;
       addBtn.addEventListener("click", (e) => {
@@ -1751,52 +1768,121 @@
   });
 
   // ============================================================
-  // Setlist - an ordered, pre-built list of songs for the service, so the
-  // operator can click straight through instead of searching for each song
-  // live. Server-persisted (data/setlist.json via GET/PUT /api/setlist) so
-  // it's the same across any open control window and survives a restart.
+  // Setlists - named, saved agendas (each an ordered list of songs) built
+  // ahead of a service, so the operator can prepare several in advance
+  // (e.g. one per service date) and just open the right one on the day
+  // instead of rebuilding a list live or overwriting whatever was there
+  // before. Server-persisted (data/setlists/<id>.json via /api/setlists) so
+  // they're the same across any open control window and survive a restart.
   // ============================================================
 
+  const setlistsIndexViewEl = document.getElementById("setlistsIndexView");
+  const setlistsIndexListEl = document.getElementById("setlistsIndexList");
+  const newSetlistBtn = document.getElementById("newSetlistBtn");
+  const setlistDetailViewEl = document.getElementById("setlistDetailView");
+  const setlistDetailNameEl = document.getElementById("setlistDetailName");
+  const backToSetlistsBtn = document.getElementById("backToSetlistsBtn");
+  const renameSetlistBtn = document.getElementById("renameSetlistBtn");
+  const deleteSetlistBtn = document.getElementById("deleteSetlistBtn");
   const setlistListEl = document.getElementById("setlistList");
-  let setlist = []; // array of song ids, in order
 
-  async function loadSetlist() {
+  let setlistsIndex = []; // [{ id, name, count }, ...]
+  let currentSetlist = null; // full { id, name, songIds } of whichever one is open, or null
+  let currentSetlistId = null;
+  try {
+    currentSetlistId = localStorage.getItem("obs-control:currentSetlistId");
+  } catch {
+    currentSetlistId = null;
+  }
+
+  async function loadSetlistsIndex() {
     try {
-      const res = await fetch("/api/setlist");
-      const data = await res.json();
-      setlist = Array.isArray(data.songIds) ? data.songIds : [];
+      const res = await fetch("/api/setlists");
+      setlistsIndex = await res.json();
     } catch {
-      setlist = [];
+      setlistsIndex = [];
     }
   }
 
-  async function saveSetlist() {
+  function renderSetlistsIndex() {
+    setlistsIndexListEl.innerHTML = "";
+    if (setlistsIndex.length === 0) {
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = 'No saved setlists yet — tap "+ New setlist" to build one ahead of time.';
+      setlistsIndexListEl.appendChild(hint);
+      return;
+    }
+    setlistsIndex.forEach((s) => {
+      const row = document.createElement("div");
+      row.className = "result-item setlist-item";
+      const titleBtn = document.createElement("button");
+      titleBtn.type = "button";
+      titleBtn.className = "song-item-title";
+      titleBtn.textContent = `${s.name} (${s.count} song${s.count === 1 ? "" : "s"})`;
+      titleBtn.addEventListener("click", () => openSetlist(s.id));
+      row.appendChild(titleBtn);
+      setlistsIndexListEl.appendChild(row);
+    });
+  }
+
+  // Opens one saved setlist: loads its full song list from the server,
+  // remembers it (per browser, via localStorage) as the "current" one so
+  // the Songs tab's +/✓ buttons and a page reload both know which agenda
+  // is active, and switches the tab into the detail view.
+  async function openSetlist(id) {
     try {
-      const res = await fetch("/api/setlist", {
+      const res = await fetch(`/api/setlists/${encodeURIComponent(id)}`);
+      if (!res.ok) return;
+      currentSetlist = await res.json();
+    } catch {
+      return;
+    }
+    currentSetlistId = currentSetlist.id;
+    try {
+      localStorage.setItem("obs-control:currentSetlistId", currentSetlistId);
+    } catch {
+      // localStorage unavailable; it'll just need reopening after a reload
+    }
+    setlistDetailNameEl.textContent = currentSetlist.name;
+    setlistsIndexViewEl.hidden = true;
+    setlistDetailViewEl.hidden = false;
+    renderSetlistDetail();
+    renderSongList(songSearchEl.value); // +/✓ indicators now reflect this setlist
+  }
+
+  function backToSetlistsIndex() {
+    setlistDetailViewEl.hidden = true;
+    setlistsIndexViewEl.hidden = false;
+    renderSetlistsIndex();
+  }
+
+  async function saveCurrentSetlist() {
+    if (!currentSetlist) return;
+    try {
+      const res = await fetch(`/api/setlists/${encodeURIComponent(currentSetlist.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ songIds: setlist }),
+        body: JSON.stringify({ name: currentSetlist.name, songIds: currentSetlist.songIds }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setlist = Array.isArray(data.songIds) ? data.songIds : setlist;
-      }
+      if (res.ok) currentSetlist = await res.json();
     } catch {
       // network hiccup; local state stays as the operator left it, next
       // successful save reconciles it with the server
     }
   }
 
-  function renderSetlist() {
+  function renderSetlistDetail() {
     setlistListEl.innerHTML = "";
-    if (setlist.length === 0) {
+    const songIds = currentSetlist ? currentSetlist.songIds : [];
+    if (songIds.length === 0) {
       const hint = document.createElement("div");
       hint.className = "empty-hint";
       hint.textContent = "Nothing added yet — use the + button next to a song in the Songs tab.";
       setlistListEl.appendChild(hint);
       return;
     }
-    setlist.forEach((id, idx) => {
+    songIds.forEach((id, idx) => {
       const song = songsIndex.find((s) => s.id === id);
       const row = document.createElement("div");
       row.className = "result-item setlist-item";
@@ -1824,7 +1910,7 @@
       downBtn.type = "button";
       downBtn.title = "Move down";
       downBtn.textContent = "▼";
-      downBtn.disabled = idx === setlist.length - 1;
+      downBtn.disabled = idx === songIds.length - 1;
       downBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         moveInSetlist(idx, 1);
@@ -1846,34 +1932,110 @@
     });
   }
 
+  // Keeps the "(N songs)" count on the setlists-index row in sync after
+  // adding/removing a song, without a full reload from the server.
+  function refreshSetlistsIndexCount() {
+    if (!currentSetlist) return;
+    const entry = setlistsIndex.find((s) => s.id === currentSetlist.id);
+    if (entry) entry.count = currentSetlist.songIds.length;
+  }
+
   async function addToSetlist(id) {
-    if (setlist.includes(id)) return;
-    setlist.push(id);
-    await saveSetlist();
-    renderSetlist();
+    if (!currentSetlist) {
+      alert("Open or create a setlist first (Setlist tab), then add songs to it.");
+      return;
+    }
+    if (currentSetlist.songIds.includes(id)) return;
+    currentSetlist.songIds.push(id);
+    await saveCurrentSetlist();
+    renderSetlistDetail();
     renderSongList(songSearchEl.value);
+    refreshSetlistsIndexCount();
   }
 
   async function removeFromSetlist(id) {
-    setlist = setlist.filter((sid) => sid !== id);
-    await saveSetlist();
-    renderSetlist();
+    if (!currentSetlist) return;
+    currentSetlist.songIds = currentSetlist.songIds.filter((sid) => sid !== id);
+    await saveCurrentSetlist();
+    renderSetlistDetail();
     renderSongList(songSearchEl.value);
+    refreshSetlistsIndexCount();
   }
 
   async function moveInSetlist(idx, delta) {
+    if (!currentSetlist) return;
     const target = idx + delta;
-    if (target < 0 || target >= setlist.length) return;
-    [setlist[idx], setlist[target]] = [setlist[target], setlist[idx]];
-    await saveSetlist();
-    renderSetlist();
+    if (target < 0 || target >= currentSetlist.songIds.length) return;
+    [currentSetlist.songIds[idx], currentSetlist.songIds[target]] = [currentSetlist.songIds[target], currentSetlist.songIds[idx]];
+    await saveCurrentSetlist();
+    renderSetlistDetail();
   }
 
-  // Loaded once at startup; if the songs list had already rendered before
-  // this resolves (unlikely, but possible on a fast tab switch right after
-  // page load), refresh it so the +/✓ button state reflects reality.
-  loadSetlist().then(() => {
-    if (songsLoaded) renderSongList(songSearchEl.value);
+  newSetlistBtn.addEventListener("click", async () => {
+    const name = prompt('Name this setlist (e.g. "Sunday Aug 23"):');
+    if (!name || !name.trim()) return;
+    newSetlistBtn.disabled = true;
+    try {
+      const res = await fetch("/api/setlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "create failed");
+      const created = await res.json();
+      await loadSetlistsIndex();
+      await openSetlist(created.id);
+    } catch (err) {
+      alert(`Could not create setlist: ${err.message}`);
+    } finally {
+      newSetlistBtn.disabled = false;
+    }
+  });
+
+  backToSetlistsBtn.addEventListener("click", backToSetlistsIndex);
+
+  renameSetlistBtn.addEventListener("click", async () => {
+    if (!currentSetlist) return;
+    const name = prompt("Rename this setlist:", currentSetlist.name);
+    if (!name || !name.trim() || name.trim() === currentSetlist.name) return;
+    currentSetlist.name = name.trim();
+    await saveCurrentSetlist();
+    setlistDetailNameEl.textContent = currentSetlist.name;
+    const entry = setlistsIndex.find((s) => s.id === currentSetlist.id);
+    if (entry) entry.name = currentSetlist.name;
+  });
+
+  deleteSetlistBtn.addEventListener("click", async () => {
+    if (!currentSetlist) return;
+    if (!confirm(`Delete the setlist "${currentSetlist.name}"? This can't be undone.`)) return;
+    try {
+      const res = await fetch(`/api/setlists/${encodeURIComponent(currentSetlist.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "delete failed");
+      setlistsIndex = setlistsIndex.filter((s) => s.id !== currentSetlist.id);
+      currentSetlist = null;
+      currentSetlistId = null;
+      try {
+        localStorage.removeItem("obs-control:currentSetlistId");
+      } catch {
+        // localStorage unavailable; nothing else to clean up
+      }
+      backToSetlistsIndex();
+      renderSongList(songSearchEl.value);
+    } catch (err) {
+      alert(`Could not delete setlist: ${err.message}`);
+    }
+  });
+
+  // Loaded once at startup; if a setlist was left open last time (persisted
+  // per browser via localStorage), reopen it automatically so the +/✓
+  // indicators in the Songs tab are accurate even before the operator
+  // visits the Setlist tab.
+  loadSetlistsIndex().then(() => {
+    if (currentSetlistId && setlistsIndex.some((s) => s.id === currentSetlistId)) {
+      openSetlist(currentSetlistId);
+    } else if (songsLoaded) {
+      renderSongList(songSearchEl.value);
+    }
   });
 
   // ============================================================

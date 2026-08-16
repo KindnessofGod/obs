@@ -131,17 +131,34 @@
 
   <!-- ===================== SETLIST ===================== -->
   <section id="tab-setlist" class="tab-panel">
-    <div class="scripture-sticky-header">
-      <div class="song-detail-header">
-        <h3>Today's setlist</h3>
+
+    <div id="setlistsIndexView">
+      <div class="scripture-sticky-header">
+        <div class="song-search-row">
+          <h3>Saved setlists</h3>
+          <button id="newSetlistBtn" type="button">+ New setlist</button>
+        </div>
       </div>
+      <div id="setlistsIndexList" class="results-list scrollable-results"></div>
+      <p class="preview-hint">
+        Build an agenda ahead of time — name it (e.g. "Sunday Aug 23"), add songs to it
+        from the Songs tab (the + button next to each song), then click it here
+        whenever you need to run through it, without searching for each song live.
+      </p>
     </div>
-    <div id="setlistList" class="results-list scrollable-results"></div>
-    <p class="preview-hint">
-      Build this ahead of the service from the Songs tab (the + button next to each
-      song) — arranged in order, then just click a song here to jump straight to it
-      without searching.
-    </p>
+
+    <div id="setlistDetailView" hidden>
+      <div class="scripture-sticky-header">
+        <div class="song-detail-header">
+          <button id="backToSetlistsBtn" title="Back to saved setlists">&#8592;</button>
+          <h3 id="setlistDetailName"></h3>
+          <button id="renameSetlistBtn" title="Rename this setlist">Rename</button>
+          <button id="deleteSetlistBtn" class="danger-btn" title="Delete this setlist">Delete</button>
+        </div>
+      </div>
+      <div id="setlistList" class="results-list scrollable-results"></div>
+    </div>
+
   </section>
 
   <!-- ===================== ANNOUNCEMENTS ===================== -->
