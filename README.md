@@ -23,17 +23,16 @@ setup and day-to-day usage guide.
 
 1. Copy this whole project folder onto the church laptop (or `git clone` it if
    you're comfortable with that).
-2. Open a terminal (PowerShell) in the project folder and run:
-   ```
-   npm install
-   npm start
-   ```
-   You should see:
-   ```
-   Church presenter running: control http://localhost:3210/control  display http://localhost:3210/display
-   ```
-   Leave this window open — it's the local server. Closing it stops the whole
-   system. (You can minimize it.)
+2. Double-click the **"Church Presenter"** icon on the Desktop (or, if that
+   icon isn't there yet, open the project folder and double-click **`Start
+   Church Presenter.vbs`**). No terminal, no typing.
+   - The very first time, it needs a minute or two to set itself up — you'll
+     see a message saying so. Just click OK and wait; it'll open the control
+     panel in your browser automatically once it's ready.
+   - Every time after that, it starts in a few seconds with no message at
+     all — it just opens the control panel.
+   - See "Starting it automatically" below for what these icons do and how
+     to put the Desktop icon on another computer.
 3. In OBS:
    - **Add the display as a Browser Source** — in your live scene, click the
      `+` under Sources → Browser. Name it something like "Presenter". Set the
@@ -54,22 +53,31 @@ setup and day-to-day usage guide.
 
 ### Starting it automatically
 
-No terminal needed — the project folder has two ready-to-use launchers:
+No terminal needed. There's a **"Church Presenter" icon on the Desktop** —
+that's the only thing anyone running the service needs to know about:
 
-- **`Start Church Presenter.vbs`** — double-click this before opening OBS
-  each service. It starts the server invisibly in the background (no black
-  command-prompt window pops up) and opens the control panel in your browser.
-  Anyone can use it; there's nothing to type. If the server's already
-  running, it just opens the control panel — double-clicking it again is
-  always safe and won't start a second copy.
-- **`Stop Church Presenter.vbs`** — double-click to fully shut the server
-  down when you're done (e.g. at the end of the night). This isn't required
-  — it's fine to leave the server running between services, or just restart
-  the laptop — but use this if you want a clean stop. **Don't run it while a
-  service is live**, since it drops whatever's currently on screen.
+- **Double-click "Church Presenter" on the Desktop** before opening OBS each
+  service. It starts the server invisibly in the background (no black
+  command-prompt window ever appears) and opens the control panel in your
+  browser. There's nothing to type, nothing to configure. If it's already
+  running, double-clicking again is always safe — it just reopens the control
+  panel instead of starting a second copy.
+  - First time only: if Node.js isn't installed yet, it tells you exactly
+    what to download instead of just failing silently.
+  - First time only: it automatically installs the app's components (with a
+    "please wait" message) instead of needing `npm install` run by hand.
 
-Right-click either one → "Send to → Desktop (create shortcut)" so they're one
-click away without digging through the project folder.
+That Desktop icon just points at **`Start Church Presenter.vbs`** in the
+project folder — if you ever move the project to a different computer,
+right-click that file → "Send to → Desktop (create shortcut)" to recreate it
+there, then optionally rename the new shortcut to "Church Presenter."
+
+There's also a **`Stop Church Presenter.vbs`** in the project folder (not on
+the Desktop, on purpose) for fully shutting the server down, e.g. at the end
+of the night. It's not required — it's fine to just leave the server running
+between services, or restart the laptop. **Don't run it while a service is
+live**, since it drops whatever's currently on screen. Because of that risk,
+it's kept out of easy reach rather than added to the Desktop.
 
 (If you'd rather do it manually, the old-fashioned way still works: open a
 terminal in the project folder and run `npm start`.)
