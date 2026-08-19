@@ -470,8 +470,9 @@
     textHeightPct: 28,
     textAlign: "bottom",
     textHAlign: "left",
-    fontFamily: "default",
-    bold: false,
+    fontFamily: "arial",
+    bold: true,
+    italic: false,
     allCaps: false,
   };
 
@@ -482,8 +483,9 @@
     textHeightPct: 20,
     textAlign: "middle",
     textHAlign: "center",
-    fontFamily: "default",
+    fontFamily: "arial",
     bold: true,
+    italic: false,
     allCaps: true,
   };
 
@@ -503,7 +505,17 @@
       } catch {
         saved = null;
       }
-      if (saved && typeof saved === "object") current = { ...defaults, ...saved };
+      if (saved && typeof saved === "object") {
+        if ("italic" in saved) {
+          current = { ...defaults, ...saved };
+        } else {
+          // Saved before the font picker/italic toggle existed - drop just
+          // the font-family/bold choice so the new Arial Bold default takes
+          // over, without discarding any sizing/position already customized.
+          const { fontFamily, bold, ...rest } = saved;
+          current = { ...defaults, ...rest };
+        }
+      }
     }
 
     function render() {
@@ -525,6 +537,7 @@
       els.textHAlignSelect.value = current.textHAlign;
       els.fontFamilySelect.value = current.fontFamily;
       els.boldCheckbox.checked = current.bold;
+      els.italicCheckbox.checked = current.italic;
       els.allCapsCheckbox.checked = current.allCaps;
     }
 
@@ -564,6 +577,7 @@
     els.textHAlignSelect.addEventListener("change", () => set({ textHAlign: els.textHAlignSelect.value }));
     els.fontFamilySelect.addEventListener("change", () => set({ fontFamily: els.fontFamilySelect.value }));
     els.boldCheckbox.addEventListener("change", () => set({ bold: els.boldCheckbox.checked }));
+    els.italicCheckbox.addEventListener("change", () => set({ italic: els.italicCheckbox.checked }));
     els.allCapsCheckbox.addEventListener("change", () => set({ allCaps: els.allCapsCheckbox.checked }));
     els.resetBtn.addEventListener("click", () => set({ ...defaults }));
 
@@ -593,6 +607,7 @@
       textHAlignSelect: "textHAlignSelect",
       fontFamilySelect: "fontFamilySelect",
       boldCheckbox: "boldCheckbox",
+      italicCheckbox: "italicCheckbox",
       allCapsCheckbox: "allCapsCheckbox",
       resetBtn: "layoutResetBtn",
     },
@@ -616,6 +631,7 @@
       textHAlignSelect: "tcTextHAlignSelect",
       fontFamilySelect: "tcFontFamilySelect",
       boldCheckbox: "tcBoldCheckbox",
+      italicCheckbox: "tcItalicCheckbox",
       allCapsCheckbox: "tcAllCapsCheckbox",
       resetBtn: "tcLayoutResetBtn",
     },
@@ -771,6 +787,7 @@
 
   // Must stay in sync with FONT_FAMILY_STACKS in display/app.js.
   const FONT_FAMILY_STACKS = {
+    arial: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
     serif: 'Georgia, "Times New Roman", serif',
     sans: '-apple-system, "Segoe UI", Roboto, Arial, sans-serif',
     condensed: '"Arial Narrow", "Segoe UI", sans-serif',
@@ -782,7 +799,6 @@
     lyric: '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   };
   const SLIDE_DEFAULT_WEIGHT = { scripture: 400, lyric: 600 };
-  const SLIDE_ITALIC = { scripture: true, lyric: false };
 
   function clampPx(minPx, vwFraction, maxPx) {
     return Math.min(maxPx, Math.max(minPx, REFERENCE_CANVAS_WIDTH_PX * vwFraction));
@@ -799,7 +815,7 @@
   function measureFontFor(slideType, fontPx) {
     const family = FONT_FAMILY_STACKS[layoutCtl.value.fontFamily] || SLIDE_DEFAULT_FONT[slideType];
     const weight = layoutCtl.value.bold ? 700 : SLIDE_DEFAULT_WEIGHT[slideType];
-    const style = SLIDE_ITALIC[slideType] ? "italic" : "normal";
+    const style = layoutCtl.value.italic ? "italic" : "normal";
     return `${style} ${weight} ${fontPx}px ${family}`;
   }
 

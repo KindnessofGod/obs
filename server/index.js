@@ -360,7 +360,7 @@ const LAYOUT_PCT_MAX = 200;
 const LAYOUT_FIELDS = ["bgWidthPct", "bgHeightPct", "textWidthPct", "textHeightPct"];
 const TEXT_ALIGN_VALUES = new Set(["top", "middle", "bottom"]);
 const TEXT_HALIGN_VALUES = new Set(["left", "center", "right"]);
-const FONT_FAMILY_VALUES = new Set(["default", "serif", "sans", "condensed", "rounded"]);
+const FONT_FAMILY_VALUES = new Set(["default", "arial", "serif", "sans", "condensed", "rounded"]);
 
 function sanitizeLayout(raw) {
   const layout = {};
@@ -373,6 +373,7 @@ function sanitizeLayout(raw) {
   if (raw && TEXT_HALIGN_VALUES.has(raw.textHAlign)) layout.textHAlign = raw.textHAlign;
   if (raw && FONT_FAMILY_VALUES.has(raw.fontFamily)) layout.fontFamily = raw.fontFamily;
   if (raw && typeof raw.bold === "boolean") layout.bold = raw.bold;
+  if (raw && typeof raw.italic === "boolean") layout.italic = raw.italic;
   if (raw && typeof raw.allCaps === "boolean") layout.allCaps = raw.allCaps;
   return layout;
 }

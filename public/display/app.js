@@ -160,6 +160,7 @@
   // see sanitizeLayout in server/index.js) to real CSS font stacks. Kept to
   // fonts that ship with Windows so this works fully offline, no web fonts.
   var FONT_FAMILY_STACKS = {
+    arial: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
     serif: 'Georgia, "Times New Roman", serif',
     sans: '-apple-system, "Segoe UI", Roboto, Arial, sans-serif',
     condensed: '"Arial Narrow", "Segoe UI", sans-serif',
@@ -217,6 +218,7 @@
     if (layout.bold) root.setProperty("--content-font-weight", "700");
     else root.removeProperty("--content-font-weight");
 
+    root.setProperty("--content-font-style", layout.italic ? "italic" : "normal");
     root.setProperty("--content-text-transform", layout.allCaps ? "uppercase" : "none");
   }
 
