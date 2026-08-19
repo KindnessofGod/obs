@@ -358,6 +358,11 @@ const TEXT_SCALE_MAX = 1.6;
 const LAYOUT_PCT_MIN = 5;
 const LAYOUT_PCT_MAX = 200;
 const LAYOUT_FIELDS = ["bgWidthPct", "bgHeightPct", "textWidthPct", "textHeightPct"];
+// Offsets move the box off its normal anchor in either direction, so unlike
+// the size fields above they're allowed to go negative.
+const LAYOUT_OFFSET_MIN = -150;
+const LAYOUT_OFFSET_MAX = 150;
+const LAYOUT_OFFSET_FIELDS = ["bgOffsetXPct", "bgOffsetYPct", "textOffsetXPct", "textOffsetYPct"];
 const TEXT_ALIGN_VALUES = new Set(["top", "middle", "bottom"]);
 const TEXT_HALIGN_VALUES = new Set(["left", "center", "right"]);
 const FONT_FAMILY_VALUES = new Set(["default", "arial", "serif", "sans", "condensed", "rounded"]);
@@ -367,6 +372,11 @@ function sanitizeLayout(raw) {
   for (const field of LAYOUT_FIELDS) {
     if (raw && typeof raw[field] === "number" && isFinite(raw[field])) {
       layout[field] = Math.min(LAYOUT_PCT_MAX, Math.max(LAYOUT_PCT_MIN, raw[field]));
+    }
+  }
+  for (const field of LAYOUT_OFFSET_FIELDS) {
+    if (raw && typeof raw[field] === "number" && isFinite(raw[field])) {
+      layout[field] = Math.min(LAYOUT_OFFSET_MAX, Math.max(LAYOUT_OFFSET_MIN, raw[field]));
     }
   }
   if (raw && TEXT_ALIGN_VALUES.has(raw.textAlign)) layout.textAlign = raw.textAlign;

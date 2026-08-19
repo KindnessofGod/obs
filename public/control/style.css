@@ -262,6 +262,10 @@ input[type="text"]:focus, textarea:focus {
   width: 44px;
   color: var(--text-dim);
 }
+.layout-row-offset > span:first-child {
+  width: 92px;
+  white-space: nowrap;
+}
 .layout-row input[type="range"] {
   flex: 1;
   accent-color: var(--accent);
@@ -298,6 +302,14 @@ input[type="text"]:focus, textarea:focus {
 .layout-row:has(select) > span:first-child { width: auto; flex: none; white-space: nowrap; }
 #layoutResetBtn {
   width: 100%;
+  font-size: 12px;
+}
+.layout-controls-actions {
+  display: flex;
+  gap: 8px;
+}
+.layout-controls-actions button {
+  flex: 1;
   font-size: 12px;
 }
 

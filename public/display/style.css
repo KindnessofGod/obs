@@ -76,6 +76,10 @@ html, body {
      unless the operator sets an explicit manual height. */
   width: var(--bg-width, 100vw);
   height: var(--bg-height, 28vh);
+  /* Lets the operator drag the whole graphic anywhere on screen instead of
+     always being pinned flush to the bottom-left corner - see --bg-offset-x/
+     -y in display/app.js (applyActiveLayout) and control/app.js. */
+  transform: translate(var(--bg-offset-x, 0px), var(--bg-offset-y, 0px));
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
@@ -121,6 +125,8 @@ html, body {
   /* Sized/positioned independently from .lt-bg above. */
   width: var(--text-width, 88vw);
   height: var(--text-height, 28vh);
+  /* See .lt-bg above - same free-drag positioning, independent of it. */
+  transform: translate(var(--text-offset-x, 0px), var(--text-offset-y, 0px));
   display: flex;
   flex-direction: column;
   justify-content: var(--content-justify, flex-end);

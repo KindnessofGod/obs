@@ -195,6 +195,14 @@
     root.setProperty("--text-width", (typeof layout.textWidthPct === "number" ? layout.textWidthPct : 88) + "vw");
     root.setProperty("--text-height", (typeof layout.textHeightPct === "number" ? layout.textHeightPct : 28) + "vh");
 
+    // Free horizontal/vertical drag away from the normal bottom-left anchor.
+    // Y is negated so a positive offset (as shown in the control UI) moves
+    // the box up the screen, matching how "more" reads intuitively there.
+    root.setProperty("--bg-offset-x", (typeof layout.bgOffsetXPct === "number" ? layout.bgOffsetXPct : 0) + "vw");
+    root.setProperty("--bg-offset-y", (typeof layout.bgOffsetYPct === "number" ? -layout.bgOffsetYPct : 0) + "vh");
+    root.setProperty("--text-offset-x", (typeof layout.textOffsetXPct === "number" ? layout.textOffsetXPct : 0) + "vw");
+    root.setProperty("--text-offset-y", (typeof layout.textOffsetYPct === "number" ? -layout.textOffsetYPct : 0) + "vh");
+
     manualBgHeight = typeof layout.bgHeightPct === "number";
     if (manualBgHeight) {
       root.setProperty("--bg-height", layout.bgHeightPct + "vh");

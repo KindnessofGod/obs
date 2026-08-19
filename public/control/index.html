@@ -283,12 +283,15 @@
     <p class="preview-hint">
       Controls the automatic title card shown at the start of every song (song
       title + "LoveWorld Singers") — kept separate from the sizing above so
-      resizing one never moves the other.
+      resizing one never moves the other. Drag the position sliders to put the
+      background and the text anywhere on screen, then click "Save current as
+      default" once you like it — future songs (and "Reset to defaults") will
+      start from that spot instead of the original one.
     </p>
 
     <div class="layout-controls">
       <div class="layout-group">
-        <div class="layout-group-title">Background size</div>
+        <div class="layout-group-title">Background size &amp; position</div>
         <label class="layout-row">
           <span>Width</span>
           <input type="range" id="tcBgWidthRange" min="20" max="150" step="1" />
@@ -303,10 +306,20 @@
           <input type="range" id="tcBgHeightRange" min="5" max="80" step="1" disabled />
           <span class="layout-value" id="tcBgHeightValue">auto</span>
         </label>
+        <label class="layout-row layout-row-offset">
+          <span>Move left / right</span>
+          <input type="range" id="tcBgOffsetXRange" min="-100" max="100" step="1" />
+          <span class="layout-value" id="tcBgOffsetXValue">0%</span>
+        </label>
+        <label class="layout-row layout-row-offset">
+          <span>Move down / up</span>
+          <input type="range" id="tcBgOffsetYRange" min="-100" max="100" step="1" />
+          <span class="layout-value" id="tcBgOffsetYValue">0%</span>
+        </label>
       </div>
 
       <div class="layout-group">
-        <div class="layout-group-title">Text area size</div>
+        <div class="layout-group-title">Text area size &amp; position</div>
         <label class="layout-row">
           <span>Width</span>
           <input type="range" id="tcTextWidthRange" min="20" max="100" step="1" />
@@ -316,6 +329,16 @@
           <span>Height</span>
           <input type="range" id="tcTextHeightRange" min="5" max="80" step="1" />
           <span class="layout-value" id="tcTextHeightValue">20%</span>
+        </label>
+        <label class="layout-row layout-row-offset">
+          <span>Move left / right</span>
+          <input type="range" id="tcTextOffsetXRange" min="-100" max="100" step="1" />
+          <span class="layout-value" id="tcTextOffsetXValue">0%</span>
+        </label>
+        <label class="layout-row layout-row-offset">
+          <span>Move down / up</span>
+          <input type="range" id="tcTextOffsetYRange" min="-100" max="100" step="1" />
+          <span class="layout-value" id="tcTextOffsetYValue">0%</span>
         </label>
       </div>
 
@@ -362,7 +385,10 @@
         </label>
       </div>
 
-      <button id="tcLayoutResetBtn" type="button">Reset to defaults</button>
+      <div class="layout-controls-actions">
+        <button id="tcLayoutResetBtn" type="button">Reset to defaults</button>
+        <button id="tcSaveDefaultBtn" type="button">Save current as default</button>
+      </div>
     </div>
   </section>
 

@@ -466,8 +466,12 @@
   const LAYOUT_DEFAULTS = {
     bgWidthPct: 100,
     bgHeightPct: null,
+    bgOffsetXPct: 0,
+    bgOffsetYPct: 0,
     textWidthPct: 88,
     textHeightPct: 28,
+    textOffsetXPct: 0,
+    textOffsetYPct: 0,
     textAlign: "bottom",
     textHAlign: "left",
     fontFamily: "arial",
@@ -479,8 +483,12 @@
   const TITLE_CARD_LAYOUT_DEFAULTS = {
     bgWidthPct: 55,
     bgHeightPct: null,
+    bgOffsetXPct: 0,
+    bgOffsetYPct: 0,
     textWidthPct: 55,
     textHeightPct: 20,
+    textOffsetXPct: 0,
+    textOffsetYPct: 0,
     textAlign: "middle",
     textHAlign: "center",
     fontFamily: "arial",
@@ -497,7 +505,21 @@
     const els = {};
     for (const [key, id] of Object.entries(ids)) els[key] = document.getElementById(id);
 
-    let current = { ...defaults };
+    // The operator can overwrite what "default"/"reset" means (see
+    // saveDefaultBtn below) - baseDefaults starts as the hardcoded factory
+    // defaults, then layers on a saved override if one exists, so "Reset to
+    // defaults" snaps back to the operator's own chosen normal instead of
+    // always discarding it back to the original hardcoded values.
+    const defaultOverrideKey = storageKey + ":default";
+    let baseDefaults = { ...defaults };
+    try {
+      const savedDefault = JSON.parse(localStorage.getItem(defaultOverrideKey) || "null");
+      if (savedDefault && typeof savedDefault === "object") baseDefaults = { ...defaults, ...savedDefault };
+    } catch {
+      // ignore corrupt storage, fall back to the hardcoded defaults
+    }
+
+    let current = { ...baseDefaults };
     {
       let saved = null;
       try {
@@ -507,13 +529,13 @@
       }
       if (saved && typeof saved === "object") {
         if ("italic" in saved) {
-          current = { ...defaults, ...saved };
+          current = { ...baseDefaults, ...saved };
         } else {
           // Saved before the font picker/italic toggle existed - drop just
           // the font-family/bold choice so the new Arial Bold default takes
           // over, without discarding any sizing/position already customized.
           const { fontFamily, bold, ...rest } = saved;
-          current = { ...defaults, ...rest };
+          current = { ...baseDefaults, ...rest };
         }
       }
     }
@@ -528,10 +550,28 @@
       els.bgHeightRange.value = autoHeight ? 28 : current.bgHeightPct;
       els.bgHeightValue.textContent = autoHeight ? "auto" : current.bgHeightPct + "%";
 
+      if (els.bgOffsetXRange) {
+        els.bgOffsetXRange.value = current.bgOffsetXPct || 0;
+        els.bgOffsetXValue.textContent = (current.bgOffsetXPct || 0) + "%";
+      }
+      if (els.bgOffsetYRange) {
+        els.bgOffsetYRange.value = current.bgOffsetYPct || 0;
+        els.bgOffsetYValue.textContent = (current.bgOffsetYPct || 0) + "%";
+      }
+
       els.textWidthRange.value = current.textWidthPct;
       els.textWidthValue.textContent = current.textWidthPct + "%";
       els.textHeightRange.value = current.textHeightPct;
       els.textHeightValue.textContent = current.textHeightPct + "%";
+
+      if (els.textOffsetXRange) {
+        els.textOffsetXRange.value = current.textOffsetXPct || 0;
+        els.textOffsetXValue.textContent = (current.textOffsetXPct || 0) + "%";
+      }
+      if (els.textOffsetYRange) {
+        els.textOffsetYRange.value = current.textOffsetYPct || 0;
+        els.textOffsetYValue.textContent = (current.textOffsetYPct || 0) + "%";
+      }
 
       els.textAlignSelect.value = current.textAlign;
       els.textHAlignSelect.value = current.textHAlign;
@@ -559,7 +599,7 @@
     // Reflects a layout that originated elsewhere (server's initial `state`,
     // or another open /control window) without re-broadcasting.
     function sync(next) {
-      current = { ...defaults, ...(next || {}) };
+      current = { ...baseDefaults, ...(next || {}) };
       localStorage.setItem(storageKey, JSON.stringify(current));
       render();
       pushToPreview();
@@ -571,15 +611,40 @@
     els.bgHeightAutoCheckbox.addEventListener("change", () => {
       set({ bgHeightPct: els.bgHeightAutoCheckbox.checked ? null : Number(els.bgHeightRange.value) });
     });
+    if (els.bgOffsetXRange) {
+      els.bgOffsetXRange.addEventListener("input", () => set({ bgOffsetXPct: Number(els.bgOffsetXRange.value) }));
+    }
+    if (els.bgOffsetYRange) {
+      els.bgOffsetYRange.addEventListener("input", () => set({ bgOffsetYPct: Number(els.bgOffsetYRange.value) }));
+    }
     els.textWidthRange.addEventListener("input", () => set({ textWidthPct: Number(els.textWidthRange.value) }));
     els.textHeightRange.addEventListener("input", () => set({ textHeightPct: Number(els.textHeightRange.value) }));
+    if (els.textOffsetXRange) {
+      els.textOffsetXRange.addEventListener("input", () => set({ textOffsetXPct: Number(els.textOffsetXRange.value) }));
+    }
+    if (els.textOffsetYRange) {
+      els.textOffsetYRange.addEventListener("input", () => set({ textOffsetYPct: Number(els.textOffsetYRange.value) }));
+    }
     els.textAlignSelect.addEventListener("change", () => set({ textAlign: els.textAlignSelect.value }));
     els.textHAlignSelect.addEventListener("change", () => set({ textHAlign: els.textHAlignSelect.value }));
     els.fontFamilySelect.addEventListener("change", () => set({ fontFamily: els.fontFamilySelect.value }));
     els.boldCheckbox.addEventListener("change", () => set({ bold: els.boldCheckbox.checked }));
     els.italicCheckbox.addEventListener("change", () => set({ italic: els.italicCheckbox.checked }));
     els.allCapsCheckbox.addEventListener("change", () => set({ allCaps: els.allCapsCheckbox.checked }));
-    els.resetBtn.addEventListener("click", () => set({ ...defaults }));
+    els.resetBtn.addEventListener("click", () => set({ ...baseDefaults }));
+    if (els.saveDefaultBtn) {
+      els.saveDefaultBtn.addEventListener("click", () => {
+        baseDefaults = { ...current };
+        localStorage.setItem(defaultOverrideKey, JSON.stringify(baseDefaults));
+        const original = els.saveDefaultBtn.textContent;
+        els.saveDefaultBtn.textContent = "Saved as default ✓";
+        els.saveDefaultBtn.disabled = true;
+        setTimeout(() => {
+          els.saveDefaultBtn.textContent = original;
+          els.saveDefaultBtn.disabled = false;
+        }, 1500);
+      });
+    }
 
     render();
 
@@ -623,10 +688,18 @@
       bgHeightAutoCheckbox: "tcBgHeightAutoCheckbox",
       bgHeightRange: "tcBgHeightRange",
       bgHeightValue: "tcBgHeightValue",
+      bgOffsetXRange: "tcBgOffsetXRange",
+      bgOffsetXValue: "tcBgOffsetXValue",
+      bgOffsetYRange: "tcBgOffsetYRange",
+      bgOffsetYValue: "tcBgOffsetYValue",
       textWidthRange: "tcTextWidthRange",
       textWidthValue: "tcTextWidthValue",
       textHeightRange: "tcTextHeightRange",
       textHeightValue: "tcTextHeightValue",
+      textOffsetXRange: "tcTextOffsetXRange",
+      textOffsetXValue: "tcTextOffsetXValue",
+      textOffsetYRange: "tcTextOffsetYRange",
+      textOffsetYValue: "tcTextOffsetYValue",
       textAlignSelect: "tcTextAlignSelect",
       textHAlignSelect: "tcTextHAlignSelect",
       fontFamilySelect: "tcFontFamilySelect",
@@ -634,6 +707,7 @@
       italicCheckbox: "tcItalicCheckbox",
       allCapsCheckbox: "tcAllCapsCheckbox",
       resetBtn: "tcLayoutResetBtn",
+      saveDefaultBtn: "tcSaveDefaultBtn",
     },
     TITLE_CARD_LAYOUT_DEFAULTS,
     "obs-control:titleCardLayout",
