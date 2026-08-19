@@ -48,24 +48,31 @@ setup and day-to-day usage guide.
      drag the new dock to wherever's convenient in your OBS layout (e.g. next
      to the Scenes list). This dock is only visible to you — it never appears
      on stream or the projector.
-4. That's the one-time setup. From now on: start the server (`npm start` in
-   that folder, or double-click a shortcut to it — see "Starting it
-   automatically" below), open OBS, and the dock + Browser Source connect
-   automatically.
+4. That's the one-time setup. From now on: double-click **`Start Church
+   Presenter.vbs`** in the project folder (see "Starting it automatically"
+   below), open OBS, and the dock + Browser Source connect automatically.
 
 ### Starting it automatically
 
-To avoid opening a terminal every service, create a shortcut that runs
-`npm start` for you: right-click in the project folder → New → Text Document,
-rename it `start.bat`, edit it (right-click → Edit) and put in:
+No terminal needed — the project folder has two ready-to-use launchers:
 
-```bat
-@echo off
-cd /d "%~dp0"
-npm start
-```
+- **`Start Church Presenter.vbs`** — double-click this before opening OBS
+  each service. It starts the server invisibly in the background (no black
+  command-prompt window pops up) and opens the control panel in your browser.
+  Anyone can use it; there's nothing to type. If the server's already
+  running, it just opens the control panel — double-clicking it again is
+  always safe and won't start a second copy.
+- **`Stop Church Presenter.vbs`** — double-click to fully shut the server
+  down when you're done (e.g. at the end of the night). This isn't required
+  — it's fine to leave the server running between services, or just restart
+  the laptop — but use this if you want a clean stop. **Don't run it while a
+  service is live**, since it drops whatever's currently on screen.
 
-Save it, and double-click `start.bat` before opening OBS each service.
+Right-click either one → "Send to → Desktop (create shortcut)" so they're one
+click away without digging through the project folder.
+
+(If you'd rather do it manually, the old-fashioned way still works: open a
+terminal in the project folder and run `npm start`.)
 
 ## 3. Using it during service
 
