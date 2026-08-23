@@ -408,6 +408,28 @@
     previewFrame.contentWindow.postMessage(msg, window.location.origin);
   }
 
+  // Drag-to-position: the preview iframe (see initPreviewDragging in
+  // display/app.js) lets the operator grab a box directly instead of only
+  // nudging percentages, then reports the resulting offset back up here via
+  // postMessage - layoutKey names which of the three layout controllers
+  // owns that box's position, so this just forwards the update through the
+  // exact same set() path the arrow-key pads already use (WS broadcast,
+  // localStorage, preview echo, all included).
+  const PREVIEW_DRAG_TARGETS = {
+    layout: () => layoutCtl,
+    titleCardLayout: () => titleCardLayoutCtl,
+    titleCardSubtitleLayout: () => titleCardSubtitleLayoutCtl,
+  };
+  window.addEventListener("message", (evt) => {
+    if (evt.source !== previewFrame.contentWindow || evt.origin !== window.location.origin) return;
+    const msg = evt.data;
+    if (!msg || typeof msg !== "object" || msg.type !== "previewDrag") return;
+    if (typeof msg.offsetX !== "number" || typeof msg.offsetY !== "number") return;
+    const getCtl = PREVIEW_DRAG_TARGETS[msg.layoutKey];
+    if (!getCtl) return;
+    getCtl().set({ [msg.xField]: msg.offsetX, [msg.yField]: msg.offsetY });
+  });
+
   function pushPreview() {
     if (!staged) {
       postToPreview({ type: "hide" });

@@ -434,6 +434,115 @@
     }
   }
 
+  // ---- Preview-mode drag-to-position ---------------------------------------
+  //
+  // Lets the operator grab the background/text/byline boxes directly in the
+  // Preview tab and drag them, instead of only nudging percentages - the
+  // real display stays non-interactive (pointer-events: none on #stage), so
+  // this only ever activates inside the ?preview=1 iframe. Dragging updates
+  // the same bgOffsetXPct/textOffsetXPct etc. fields the arrow-key pads use
+  // (see control/app.js), just via a different input.
+  function initPreviewDragging() {
+    document.body.classList.add("is-preview");
+
+    // Maps which box was grabbed + which slide type is showing to the exact
+    // layout object/field pair that owns its position, mirroring the same
+    // swap applyActiveLayout does for bg/text (see currentSlideType above).
+    function targetFor(boxKind) {
+      if (boxKind === "subtitle") {
+        return { layoutKey: "titleCardSubtitleLayout", layout: currentTitleCardSubtitleLayout, xField: "textOffsetXPct", yField: "textOffsetYPct" };
+      }
+      var isTitleCard = currentSlideType === "songtitle";
+      var layout = isTitleCard ? currentTitleCardLayout : currentLayout;
+      var layoutKey = isTitleCard ? "titleCardLayout" : "layout";
+      if (boxKind === "bg") return { layoutKey: layoutKey, layout: layout, xField: "bgOffsetXPct", yField: "bgOffsetYPct" };
+      return { layoutKey: layoutKey, layout: layout, xField: "textOffsetXPct", yField: "textOffsetYPct" };
+    }
+
+    function clampOffset(n) {
+      return Math.min(100, Math.max(-100, n));
+    }
+
+    function makeDraggable(el, boxKind) {
+      var dragging = null; // { target, startClientX, startClientY, startX, startY }
+      var commitScheduled = false;
+
+      function scheduleCommit() {
+        if (commitScheduled) return;
+        commitScheduled = true;
+        requestAnimationFrame(function () {
+          commitScheduled = false;
+          if (dragging) commit();
+        });
+      }
+
+      function commit() {
+        var t = dragging.target;
+        window.parent.postMessage(
+          {
+            type: "previewDrag",
+            layoutKey: t.layoutKey,
+            xField: t.xField,
+            yField: t.yField,
+            offsetX: t.layout[t.xField] || 0,
+            offsetY: t.layout[t.yField] || 0,
+          },
+          window.location.origin
+        );
+      }
+
+      el.addEventListener("pointerdown", function (e) {
+        if (e.button !== 0) return;
+        var target = targetFor(boxKind);
+        dragging = {
+          target: target,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startX: target.layout[target.xField] || 0,
+          startY: target.layout[target.yField] || 0,
+        };
+        el.classList.add("pv-dragging");
+        el.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
+
+      el.addEventListener("pointermove", function (e) {
+        if (!dragging) return;
+        var vw = document.documentElement.clientWidth || 1;
+        var vh = document.documentElement.clientHeight || 1;
+        var deltaXPct = ((e.clientX - dragging.startClientX) / vw) * 100;
+        // Negated: dragging down moves the box down, which is a *negative*
+        // offset in our "positive = up" convention (see applyActiveLayout).
+        var deltaYPct = -((e.clientY - dragging.startClientY) / vh) * 100;
+        var t = dragging.target;
+        t.layout[t.xField] = clampOffset(dragging.startX + deltaXPct);
+        t.layout[t.yField] = clampOffset(dragging.startY + deltaYPct);
+        if (t.layoutKey === "titleCardSubtitleLayout") applySubtitleLayout();
+        else applyActiveLayout(currentSlideType);
+        scheduleCommit();
+      });
+
+      function endDrag(e) {
+        if (!dragging) return;
+        try {
+          el.releasePointerCapture(e.pointerId);
+        } catch (err) {
+          /* no-op */
+        }
+        el.classList.remove("pv-dragging");
+        commit();
+        dragging = null;
+      }
+
+      el.addEventListener("pointerup", endDrag);
+      el.addEventListener("pointercancel", endDrag);
+    }
+
+    makeDraggable(ltBg, "bg");
+    makeDraggable(ltContent, "text");
+    makeDraggable(ltSubtitle, "subtitle");
+  }
+
   // ---- Preview mode --------------------------------------------------------
   //
   // With ?preview=1, this page is embedded as an iframe inside /control (the
@@ -451,6 +560,7 @@
       if (!evt.data || typeof evt.data !== "object") return;
       handleMessage(evt.data);
     });
+    initPreviewDragging();
   } else {
     // ---- WebSocket connection + reconnect with backoff ---------------------
 
