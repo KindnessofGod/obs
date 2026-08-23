@@ -14,6 +14,7 @@
   var lowerThird = document.getElementById("lower-third");
   var ltBg = document.getElementById("lt-bg");
   var ltContent = document.getElementById("lt-content");
+  var ltSubtitle = document.getElementById("lt-subtitle");
 
   // Current on-screen state, so we know whether an incoming "show" is a
   // fresh entrance (bar currently hidden) or an in-place slide swap
@@ -65,13 +66,13 @@
     }
 
     if (slideType === "songtitle") {
-      // Automatic intro card shown before a song's first lyric slide -
-      // title + (by default) "LoveWorld Singers", since there are no other
-      // singers to distinguish - see control/app.js's TITLE_CARD_SUBTITLE.
+      // Automatic intro card shown before a song's first lyric slide - the
+      // title itself. The "LoveWorld Singers" byline is a fully separate
+      // box (.lt-subtitle, see buildSubtitleHtml below) so the two can be
+      // sized/positioned/colored independently of each other.
       return (
         '<div class="slide slide-songtitle">' +
         '<div class="songtitle-title">' + escapeHtml(content.title) + "</div>" +
-        (content.subtitle ? '<div class="songtitle-subtitle">' + escapeHtml(content.subtitle) + "</div>" : "") +
         "</div>"
       );
     }
@@ -94,6 +95,16 @@
       '<div class="announcement-body">' + escapeHtml(fallbackText) + "</div>" +
       "</div>"
     );
+  }
+
+  // The song title card's "LoveWorld Singers" byline - its own independent
+  // box (.lt-subtitle), separate from buildSlideHtml/.lt-content so it can
+  // be moved, sized, and colored on its own. Empty for every other slide
+  // type, and for a title card with no subtitle text at all.
+  function buildSubtitleHtml(slideType, content) {
+    content = content || {};
+    if (slideType !== "songtitle" || !content.subtitle) return "";
+    return '<div class="subtitle-text">' + escapeHtml(content.subtitle) + "</div>";
   }
 
   // Caches each background's real pixel aspect ratio after the first load,
@@ -228,6 +239,49 @@
 
     root.setProperty("--content-font-style", layout.italic ? "italic" : "normal");
     root.setProperty("--content-text-transform", layout.allCaps ? "uppercase" : "none");
+
+    if (layout.color) root.setProperty("--content-color", layout.color);
+    else root.removeProperty("--content-color");
+
+    // Independent of --text-scale (the operator's global A-/A+ control,
+    // applied on top of this) - a per-box multiplier so each text group's
+    // size can be tuned on its own without touching its box width.
+    root.setProperty("--content-font-size-scale", (typeof layout.fontSizePct === "number" ? layout.fontSizePct : 100) / 100);
+  }
+
+  // The song title card's subtitle ("LoveWorld Singers") box - independent
+  // of applyActiveLayout above since, unlike --bg-*/--content-*, it's never
+  // swapped between slide types: only the title card ever populates
+  // .lt-subtitle, so it always just applies straight from its own layout.
+  var currentTitleCardSubtitleLayout = {};
+
+  function applySubtitleLayout() {
+    var layout = currentTitleCardSubtitleLayout || {};
+    var root = document.documentElement.style;
+
+    root.setProperty("--subtitle-width", (typeof layout.textWidthPct === "number" ? layout.textWidthPct : 55) + "vw");
+    root.setProperty("--subtitle-height", (typeof layout.textHeightPct === "number" ? layout.textHeightPct : 10) + "vh");
+    root.setProperty("--subtitle-offset-x", (typeof layout.textOffsetXPct === "number" ? layout.textOffsetXPct : 0) + "vw");
+    root.setProperty("--subtitle-offset-y", (typeof layout.textOffsetYPct === "number" ? -layout.textOffsetYPct : 0) + "vh");
+
+    root.setProperty("--subtitle-justify", TEXT_ALIGN_JUSTIFY[layout.textAlign] || TEXT_ALIGN_JUSTIFY.bottom);
+    root.setProperty("--subtitle-align-items", TEXT_HALIGN_ITEMS[layout.textHAlign] || TEXT_HALIGN_ITEMS.center);
+    root.setProperty("--subtitle-text-align", layout.textHAlign || "center");
+
+    var fontStack = FONT_FAMILY_STACKS[layout.fontFamily];
+    if (fontStack) root.setProperty("--subtitle-font-family", fontStack);
+    else root.removeProperty("--subtitle-font-family");
+
+    if (layout.bold) root.setProperty("--subtitle-font-weight", "700");
+    else root.removeProperty("--subtitle-font-weight");
+
+    root.setProperty("--subtitle-font-style", layout.italic ? "italic" : "normal");
+    root.setProperty("--subtitle-text-transform", layout.allCaps ? "uppercase" : "none");
+
+    if (layout.color) root.setProperty("--subtitle-color", layout.color);
+    else root.removeProperty("--subtitle-color");
+
+    root.setProperty("--subtitle-font-size-scale", (typeof layout.fontSizePct === "number" ? layout.fontSizePct : 100) / 100);
   }
 
   function applyLayout(layout) {
@@ -240,8 +294,14 @@
     applyActiveLayout(currentSlideType);
   }
 
+  function applyTitleCardSubtitleLayout(layout) {
+    currentTitleCardSubtitleLayout = layout || {};
+    applySubtitleLayout();
+  }
+
   function paint(slideType, content) {
     ltContent.innerHTML = buildSlideHtml(slideType, content);
+    ltSubtitle.innerHTML = buildSubtitleHtml(slideType, content);
     applyBackground(content);
     applyActiveLayout(slideType);
   }
@@ -279,6 +339,7 @@
     // bar has faded away.
     hideTimer = setTimeout(function () {
       ltContent.innerHTML = "";
+      ltSubtitle.innerHTML = "";
       ltBg.style.backgroundImage = "";
       ltBg.classList.add("no-bg");
     }, HIDE_MS);
@@ -329,6 +390,7 @@
     applyTextScale(msg.textScale);
     applyLayout(msg.layout);
     applyTitleCardLayout(msg.titleCardLayout);
+    applyTitleCardSubtitleLayout(msg.titleCardSubtitleLayout);
     if (msg.visible && msg.current && msg.current.slideType) {
       currentSlideType = msg.current.slideType;
       showEntrance(msg.current.slideType, msg.current.content);
@@ -363,6 +425,9 @@
         break;
       case "titleCardLayout":
         applyTitleCardLayout(msg.layout);
+        break;
+      case "titleCardSubtitleLayout":
+        applyTitleCardSubtitleLayout(msg.layout);
         break;
       default:
         console.warn("[display] unknown message type:", msg.type);

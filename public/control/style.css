@@ -263,8 +263,38 @@ input[type="text"]:focus, textarea:focus {
   color: var(--text-dim);
 }
 .layout-row-offset > span:first-child {
-  width: 92px;
+  width: 56px;
   white-space: nowrap;
+}
+.position-pad {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.position-pad:focus {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.position-pad-readout {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+.position-pad-readout b {
+  font-weight: 600;
+}
+.position-pad-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: right;
 }
 .layout-row input[type="range"] {
   flex: 1;
@@ -300,6 +330,15 @@ input[type="text"]:focus, textarea:focus {
 }
 .layout-row select:focus { outline: none; border-color: var(--accent); }
 .layout-row:has(select) > span:first-child { width: auto; flex: none; white-space: nowrap; }
+.layout-row input[type="color"] {
+  width: 36px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
 #layoutResetBtn {
   width: 100%;
   font-size: 12px;

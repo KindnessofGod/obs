@@ -236,6 +236,11 @@
       <div class="layout-group">
         <div class="layout-group-title">Text style</div>
         <label class="layout-row">
+          <span>Text size</span>
+          <input type="range" id="fontSizeRange" min="50" max="250" step="5" />
+          <span class="layout-value" id="fontSizeValue">100%</span>
+        </label>
+        <label class="layout-row">
           <span>Vertical position</span>
           <select id="textAlignSelect">
             <option value="top">Top</option>
@@ -274,19 +279,24 @@
           <input type="checkbox" id="allCapsCheckbox" />
           <span>ALL CAPS</span>
         </label>
+        <label class="layout-row">
+          <span>Color</span>
+          <input type="color" id="colorInput" />
+        </label>
       </div>
 
       <button id="layoutResetBtn" type="button">Reset to defaults</button>
     </div>
 
-    <h3 class="layout-controls-heading">Song title card position &amp; size</h3>
+    <h3 class="layout-controls-heading">Song title card — background &amp; title text</h3>
     <p class="preview-hint">
-      Controls the automatic title card shown at the start of every song (song
-      title + "LoveWorld Singers") — kept separate from the sizing above so
-      resizing one never moves the other. Drag the position sliders to put the
-      background and the text anywhere on screen, then click "Save current as
-      default" once you like it — future songs (and "Reset to defaults") will
-      start from that spot instead of the original one.
+      Controls the automatic title card shown at the start of every song —
+      kept separate from the sizing above so resizing one never moves the
+      other. The "LoveWorld Singers" byline is its own independent box, set
+      up separately further down. Drag the position sliders to put the
+      background and the title text anywhere on screen, then click "Save
+      current as default" once you like it — future songs (and "Reset to
+      defaults") will start from that spot instead of the original one.
     </p>
 
     <div class="layout-controls">
@@ -306,16 +316,13 @@
           <input type="range" id="tcBgHeightRange" min="5" max="80" step="1" disabled />
           <span class="layout-value" id="tcBgHeightValue">auto</span>
         </label>
-        <label class="layout-row layout-row-offset">
-          <span>Move left / right</span>
-          <input type="range" id="tcBgOffsetXRange" min="-100" max="100" step="1" />
-          <span class="layout-value" id="tcBgOffsetXValue">0%</span>
-        </label>
-        <label class="layout-row layout-row-offset">
-          <span>Move down / up</span>
-          <input type="range" id="tcBgOffsetYRange" min="-100" max="100" step="1" />
-          <span class="layout-value" id="tcBgOffsetYValue">0%</span>
-        </label>
+        <div class="layout-row layout-row-offset">
+          <span>Position</span>
+          <div class="position-pad" id="tcBgOffsetPad" tabindex="0">
+            <span class="position-pad-readout">X <b id="tcBgOffsetXValue">0%</b> &nbsp; Y <b id="tcBgOffsetYValue">0%</b></span>
+            <span class="position-pad-hint">click, then arrow keys (Shift = faster)</span>
+          </div>
+        </div>
       </div>
 
       <div class="layout-group">
@@ -330,20 +337,22 @@
           <input type="range" id="tcTextHeightRange" min="5" max="80" step="1" />
           <span class="layout-value" id="tcTextHeightValue">20%</span>
         </label>
-        <label class="layout-row layout-row-offset">
-          <span>Move left / right</span>
-          <input type="range" id="tcTextOffsetXRange" min="-100" max="100" step="1" />
-          <span class="layout-value" id="tcTextOffsetXValue">0%</span>
-        </label>
-        <label class="layout-row layout-row-offset">
-          <span>Move down / up</span>
-          <input type="range" id="tcTextOffsetYRange" min="-100" max="100" step="1" />
-          <span class="layout-value" id="tcTextOffsetYValue">0%</span>
-        </label>
+        <div class="layout-row layout-row-offset">
+          <span>Position</span>
+          <div class="position-pad" id="tcTextOffsetPad" tabindex="0">
+            <span class="position-pad-readout">X <b id="tcTextOffsetXValue">0%</b> &nbsp; Y <b id="tcTextOffsetYValue">0%</b></span>
+            <span class="position-pad-hint">click, then arrow keys (Shift = faster)</span>
+          </div>
+        </div>
       </div>
 
       <div class="layout-group">
         <div class="layout-group-title">Text style</div>
+        <label class="layout-row">
+          <span>Text size</span>
+          <input type="range" id="tcFontSizeRange" min="50" max="250" step="5" />
+          <span class="layout-value" id="tcFontSizeValue">100%</span>
+        </label>
         <label class="layout-row">
           <span>Vertical position</span>
           <select id="tcTextAlignSelect">
@@ -383,11 +392,102 @@
           <input type="checkbox" id="tcAllCapsCheckbox" />
           <span>ALL CAPS</span>
         </label>
+        <label class="layout-row">
+          <span>Color</span>
+          <input type="color" id="tcColorInput" />
+        </label>
       </div>
 
       <div class="layout-controls-actions">
         <button id="tcLayoutResetBtn" type="button">Reset to defaults</button>
         <button id="tcSaveDefaultBtn" type="button">Save current as default</button>
+      </div>
+    </div>
+
+    <h3 class="layout-controls-heading">Song title card — "LoveWorld Singers" byline</h3>
+    <p class="preview-hint">
+      A completely separate box from the title above - move it, resize it,
+      or recolor it without ever affecting the title's own position. Use
+      "Move down / up" to control how much space sits between them.
+    </p>
+
+    <div class="layout-controls">
+      <div class="layout-group">
+        <div class="layout-group-title">Size &amp; position</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="tcSubTextWidthRange" min="20" max="100" step="1" />
+          <span class="layout-value" id="tcSubTextWidthValue">55%</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="tcSubTextHeightRange" min="5" max="80" step="1" />
+          <span class="layout-value" id="tcSubTextHeightValue">8%</span>
+        </label>
+        <div class="layout-row layout-row-offset">
+          <span>Position</span>
+          <div class="position-pad" id="tcSubTextOffsetPad" tabindex="0">
+            <span class="position-pad-readout">X <b id="tcSubTextOffsetXValue">0%</b> &nbsp; Y <b id="tcSubTextOffsetYValue">0%</b></span>
+            <span class="position-pad-hint">click, then arrow keys (Shift = faster)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text style</div>
+        <label class="layout-row">
+          <span>Text size</span>
+          <input type="range" id="tcSubFontSizeRange" min="50" max="250" step="5" />
+          <span class="layout-value" id="tcSubFontSizeValue">100%</span>
+        </label>
+        <label class="layout-row">
+          <span>Vertical position</span>
+          <select id="tcSubTextAlignSelect">
+            <option value="top">Top</option>
+            <option value="middle">Middle</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Horizontal position</span>
+          <select id="tcSubTextHAlignSelect">
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Font</span>
+          <select id="tcSubFontFamilySelect">
+            <option value="arial">Arial</option>
+            <option value="default">Default (per slide type)</option>
+            <option value="serif">Serif</option>
+            <option value="sans">Sans-serif</option>
+            <option value="condensed">Condensed</option>
+            <option value="rounded">Rounded</option>
+          </select>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="tcSubBoldCheckbox" />
+          <span>Bold</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="tcSubItalicCheckbox" />
+          <span>Italic</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="tcSubAllCapsCheckbox" />
+          <span>ALL CAPS</span>
+        </label>
+        <label class="layout-row">
+          <span>Color</span>
+          <input type="color" id="tcSubColorInput" />
+        </label>
+      </div>
+
+      <div class="layout-controls-actions">
+        <button id="tcSubLayoutResetBtn" type="button">Reset to defaults</button>
+        <button id="tcSubSaveDefaultBtn" type="button">Save current as default</button>
       </div>
     </div>
   </section>

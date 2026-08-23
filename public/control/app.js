@@ -60,6 +60,7 @@
       send({ type: "textScale", scale: textScale });
       send({ type: "layout", layout: layoutCtl.value });
       send({ type: "titleCardLayout", layout: titleCardLayoutCtl.value });
+      send({ type: "titleCardSubtitleLayout", layout: titleCardSubtitleLayoutCtl.value });
     });
 
     ws.addEventListener("close", () => {
@@ -138,12 +139,17 @@
       if (typeof msg.textScale === "number") syncTextScale(msg.textScale);
       if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
       if (msg.titleCardLayout && typeof msg.titleCardLayout === "object") syncTitleCardLayout(msg.titleCardLayout);
+      if (msg.titleCardSubtitleLayout && typeof msg.titleCardSubtitleLayout === "object") {
+        syncTitleCardSubtitleLayout(msg.titleCardSubtitleLayout);
+      }
     } else if (msg.type === "textScale") {
       if (typeof msg.scale === "number") syncTextScale(msg.scale);
     } else if (msg.type === "layout") {
       if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
     } else if (msg.type === "titleCardLayout") {
       if (msg.layout && typeof msg.layout === "object") syncTitleCardLayout(msg.layout);
+    } else if (msg.type === "titleCardSubtitleLayout") {
+      if (msg.layout && typeof msg.layout === "object") syncTitleCardSubtitleLayout(msg.layout);
     } else if (msg.type === "show") {
       renderLiveBanner(true, { slideType: msg.slideType, content: msg.content });
       reconcileLiveState({ slideType: msg.slideType, content: msg.content });
@@ -419,6 +425,7 @@
     postToPreview({ type: "textScale", scale: textScale });
     postToPreview({ type: "layout", layout: layoutCtl.value });
     postToPreview({ type: "titleCardLayout", layout: titleCardLayoutCtl.value });
+    postToPreview({ type: "titleCardSubtitleLayout", layout: titleCardSubtitleLayoutCtl.value });
   });
 
   function stage(slideType, content) {
@@ -472,12 +479,14 @@
     textHeightPct: 28,
     textOffsetXPct: 0,
     textOffsetYPct: 0,
+    fontSizePct: 100,
     textAlign: "bottom",
     textHAlign: "left",
     fontFamily: "arial",
     bold: true,
     italic: false,
     allCaps: false,
+    color: "#fdfaf2",
   };
 
   const TITLE_CARD_LAYOUT_DEFAULTS = {
@@ -489,12 +498,33 @@
     textHeightPct: 20,
     textOffsetXPct: 0,
     textOffsetYPct: 0,
+    fontSizePct: 100,
     textAlign: "middle",
     textHAlign: "center",
     fontFamily: "arial",
     bold: true,
     italic: false,
     allCaps: true,
+    color: "#fdfaf2",
+  };
+
+  // Independent from titleCardLayout above - the "LoveWorld Singers" byline
+  // is its own box with its own size/position/font/color, so it can be
+  // moved and spaced relative to the title however the operator wants,
+  // rather than always being glued directly under it.
+  const TITLE_CARD_SUBTITLE_LAYOUT_DEFAULTS = {
+    textWidthPct: 55,
+    textHeightPct: 8,
+    textOffsetXPct: 0,
+    textOffsetYPct: 0,
+    fontSizePct: 100,
+    textAlign: "bottom",
+    textHAlign: "center",
+    fontFamily: "arial",
+    bold: true,
+    italic: false,
+    allCaps: true,
+    color: "#f4e2a1",
   };
 
   // Builds one independent layout controller bound to a set of DOM element
@@ -541,21 +571,19 @@
     }
 
     function render() {
-      els.bgWidthRange.value = current.bgWidthPct;
-      els.bgWidthValue.textContent = current.bgWidthPct + "%";
+      if (els.bgWidthRange) {
+        els.bgWidthRange.value = current.bgWidthPct;
+        els.bgWidthValue.textContent = current.bgWidthPct + "%";
 
-      const autoHeight = current.bgHeightPct == null;
-      els.bgHeightAutoCheckbox.checked = autoHeight;
-      els.bgHeightRange.disabled = autoHeight;
-      els.bgHeightRange.value = autoHeight ? 28 : current.bgHeightPct;
-      els.bgHeightValue.textContent = autoHeight ? "auto" : current.bgHeightPct + "%";
-
-      if (els.bgOffsetXRange) {
-        els.bgOffsetXRange.value = current.bgOffsetXPct || 0;
-        els.bgOffsetXValue.textContent = (current.bgOffsetXPct || 0) + "%";
+        const autoHeight = current.bgHeightPct == null;
+        els.bgHeightAutoCheckbox.checked = autoHeight;
+        els.bgHeightRange.disabled = autoHeight;
+        els.bgHeightRange.value = autoHeight ? 28 : current.bgHeightPct;
+        els.bgHeightValue.textContent = autoHeight ? "auto" : current.bgHeightPct + "%";
       }
-      if (els.bgOffsetYRange) {
-        els.bgOffsetYRange.value = current.bgOffsetYPct || 0;
+
+      if (els.bgOffsetPad) {
+        els.bgOffsetXValue.textContent = (current.bgOffsetXPct || 0) + "%";
         els.bgOffsetYValue.textContent = (current.bgOffsetYPct || 0) + "%";
       }
 
@@ -564,13 +592,14 @@
       els.textHeightRange.value = current.textHeightPct;
       els.textHeightValue.textContent = current.textHeightPct + "%";
 
-      if (els.textOffsetXRange) {
-        els.textOffsetXRange.value = current.textOffsetXPct || 0;
+      if (els.textOffsetPad) {
         els.textOffsetXValue.textContent = (current.textOffsetXPct || 0) + "%";
-      }
-      if (els.textOffsetYRange) {
-        els.textOffsetYRange.value = current.textOffsetYPct || 0;
         els.textOffsetYValue.textContent = (current.textOffsetYPct || 0) + "%";
+      }
+
+      if (els.fontSizeRange) {
+        els.fontSizeRange.value = current.fontSizePct || 100;
+        els.fontSizeValue.textContent = (current.fontSizePct || 100) + "%";
       }
 
       els.textAlignSelect.value = current.textAlign;
@@ -579,6 +608,7 @@
       els.boldCheckbox.checked = current.bold;
       els.italicCheckbox.checked = current.italic;
       els.allCapsCheckbox.checked = current.allCaps;
+      if (els.colorInput) els.colorInput.value = current.color || "#ffffff";
     }
 
     function pushToPreview() {
@@ -606,24 +636,41 @@
       if (typeof currentSong !== "undefined" && currentSong) renderSlideList();
     }
 
-    els.bgWidthRange.addEventListener("input", () => set({ bgWidthPct: Number(els.bgWidthRange.value) }));
-    els.bgHeightRange.addEventListener("input", () => set({ bgHeightPct: Number(els.bgHeightRange.value) }));
-    els.bgHeightAutoCheckbox.addEventListener("change", () => {
-      set({ bgHeightPct: els.bgHeightAutoCheckbox.checked ? null : Number(els.bgHeightRange.value) });
-    });
-    if (els.bgOffsetXRange) {
-      els.bgOffsetXRange.addEventListener("input", () => set({ bgOffsetXPct: Number(els.bgOffsetXRange.value) }));
+    // Free-drag position, driven by arrow keys instead of a slider - click
+    // the pad to focus it, then arrow keys nudge by 1% (Shift+arrow for a
+    // bigger 5% jump). Same -100..100 range the old sliders used.
+    function wireOffsetPad(padEl, xField, yField) {
+      if (!padEl) return;
+      padEl.addEventListener("keydown", (e) => {
+        const step = e.shiftKey ? 5 : 1;
+        let dx = 0;
+        let dy = 0;
+        if (e.key === "ArrowLeft") dx = -step;
+        else if (e.key === "ArrowRight") dx = step;
+        else if (e.key === "ArrowUp") dy = step;
+        else if (e.key === "ArrowDown") dy = -step;
+        else return;
+        e.preventDefault();
+        set({
+          [xField]: Math.min(100, Math.max(-100, (current[xField] || 0) + dx)),
+          [yField]: Math.min(100, Math.max(-100, (current[yField] || 0) + dy)),
+        });
+      });
     }
-    if (els.bgOffsetYRange) {
-      els.bgOffsetYRange.addEventListener("input", () => set({ bgOffsetYPct: Number(els.bgOffsetYRange.value) }));
+
+    if (els.bgWidthRange) {
+      els.bgWidthRange.addEventListener("input", () => set({ bgWidthPct: Number(els.bgWidthRange.value) }));
+      els.bgHeightRange.addEventListener("input", () => set({ bgHeightPct: Number(els.bgHeightRange.value) }));
+      els.bgHeightAutoCheckbox.addEventListener("change", () => {
+        set({ bgHeightPct: els.bgHeightAutoCheckbox.checked ? null : Number(els.bgHeightRange.value) });
+      });
     }
+    wireOffsetPad(els.bgOffsetPad, "bgOffsetXPct", "bgOffsetYPct");
     els.textWidthRange.addEventListener("input", () => set({ textWidthPct: Number(els.textWidthRange.value) }));
     els.textHeightRange.addEventListener("input", () => set({ textHeightPct: Number(els.textHeightRange.value) }));
-    if (els.textOffsetXRange) {
-      els.textOffsetXRange.addEventListener("input", () => set({ textOffsetXPct: Number(els.textOffsetXRange.value) }));
-    }
-    if (els.textOffsetYRange) {
-      els.textOffsetYRange.addEventListener("input", () => set({ textOffsetYPct: Number(els.textOffsetYRange.value) }));
+    wireOffsetPad(els.textOffsetPad, "textOffsetXPct", "textOffsetYPct");
+    if (els.fontSizeRange) {
+      els.fontSizeRange.addEventListener("input", () => set({ fontSizePct: Number(els.fontSizeRange.value) }));
     }
     els.textAlignSelect.addEventListener("change", () => set({ textAlign: els.textAlignSelect.value }));
     els.textHAlignSelect.addEventListener("change", () => set({ textHAlign: els.textHAlignSelect.value }));
@@ -631,6 +678,9 @@
     els.boldCheckbox.addEventListener("change", () => set({ bold: els.boldCheckbox.checked }));
     els.italicCheckbox.addEventListener("change", () => set({ italic: els.italicCheckbox.checked }));
     els.allCapsCheckbox.addEventListener("change", () => set({ allCaps: els.allCapsCheckbox.checked }));
+    if (els.colorInput) {
+      els.colorInput.addEventListener("input", () => set({ color: els.colorInput.value }));
+    }
     els.resetBtn.addEventListener("click", () => set({ ...baseDefaults }));
     if (els.saveDefaultBtn) {
       els.saveDefaultBtn.addEventListener("click", () => {
@@ -668,12 +718,15 @@
       textWidthValue: "textWidthValue",
       textHeightRange: "textHeightRange",
       textHeightValue: "textHeightValue",
+      fontSizeRange: "fontSizeRange",
+      fontSizeValue: "fontSizeValue",
       textAlignSelect: "textAlignSelect",
       textHAlignSelect: "textHAlignSelect",
       fontFamilySelect: "fontFamilySelect",
       boldCheckbox: "boldCheckbox",
       italicCheckbox: "italicCheckbox",
       allCapsCheckbox: "allCapsCheckbox",
+      colorInput: "colorInput",
       resetBtn: "layoutResetBtn",
     },
     LAYOUT_DEFAULTS,
@@ -688,30 +741,61 @@
       bgHeightAutoCheckbox: "tcBgHeightAutoCheckbox",
       bgHeightRange: "tcBgHeightRange",
       bgHeightValue: "tcBgHeightValue",
-      bgOffsetXRange: "tcBgOffsetXRange",
+      bgOffsetPad: "tcBgOffsetPad",
       bgOffsetXValue: "tcBgOffsetXValue",
-      bgOffsetYRange: "tcBgOffsetYRange",
       bgOffsetYValue: "tcBgOffsetYValue",
       textWidthRange: "tcTextWidthRange",
       textWidthValue: "tcTextWidthValue",
       textHeightRange: "tcTextHeightRange",
       textHeightValue: "tcTextHeightValue",
-      textOffsetXRange: "tcTextOffsetXRange",
+      textOffsetPad: "tcTextOffsetPad",
       textOffsetXValue: "tcTextOffsetXValue",
-      textOffsetYRange: "tcTextOffsetYRange",
       textOffsetYValue: "tcTextOffsetYValue",
+      fontSizeRange: "tcFontSizeRange",
+      fontSizeValue: "tcFontSizeValue",
       textAlignSelect: "tcTextAlignSelect",
       textHAlignSelect: "tcTextHAlignSelect",
       fontFamilySelect: "tcFontFamilySelect",
       boldCheckbox: "tcBoldCheckbox",
       italicCheckbox: "tcItalicCheckbox",
       allCapsCheckbox: "tcAllCapsCheckbox",
+      colorInput: "tcColorInput",
       resetBtn: "tcLayoutResetBtn",
       saveDefaultBtn: "tcSaveDefaultBtn",
     },
     TITLE_CARD_LAYOUT_DEFAULTS,
     "obs-control:titleCardLayout",
     "titleCardLayout"
+  );
+
+  // Title card's "LoveWorld Singers" byline - a fully independent box (no
+  // background of its own, so no bg* ids here) from titleCardLayout above,
+  // so it can be positioned/spaced/colored relative to the title however
+  // the operator wants instead of always being glued directly under it.
+  const titleCardSubtitleLayoutCtl = createLayoutController(
+    {
+      textWidthRange: "tcSubTextWidthRange",
+      textWidthValue: "tcSubTextWidthValue",
+      textHeightRange: "tcSubTextHeightRange",
+      textHeightValue: "tcSubTextHeightValue",
+      textOffsetPad: "tcSubTextOffsetPad",
+      textOffsetXValue: "tcSubTextOffsetXValue",
+      textOffsetYValue: "tcSubTextOffsetYValue",
+      fontSizeRange: "tcSubFontSizeRange",
+      fontSizeValue: "tcSubFontSizeValue",
+      textAlignSelect: "tcSubTextAlignSelect",
+      textHAlignSelect: "tcSubTextHAlignSelect",
+      fontFamilySelect: "tcSubFontFamilySelect",
+      boldCheckbox: "tcSubBoldCheckbox",
+      italicCheckbox: "tcSubItalicCheckbox",
+      allCapsCheckbox: "tcSubAllCapsCheckbox",
+      colorInput: "tcSubColorInput",
+      resetBtn: "tcSubLayoutResetBtn",
+      saveDefaultBtn: "tcSubSaveDefaultBtn",
+    },
+    TITLE_CARD_SUBTITLE_LAYOUT_DEFAULTS,
+    "obs-control:titleCardSubtitleLayout",
+    "titleCardSubtitleLayout"
   );
 
   // `layout`/`setLayout`/`syncLayout` kept as the names the rest of this
@@ -725,6 +809,9 @@
   }
   function syncTitleCardLayout(next) {
     titleCardLayoutCtl.sync(next);
+  }
+  function syncTitleCardSubtitleLayout(next) {
+    titleCardSubtitleLayoutCtl.sync(next);
   }
 
   // ============================================================

@@ -363,9 +363,12 @@ const LAYOUT_FIELDS = ["bgWidthPct", "bgHeightPct", "textWidthPct", "textHeightP
 const LAYOUT_OFFSET_MIN = -150;
 const LAYOUT_OFFSET_MAX = 150;
 const LAYOUT_OFFSET_FIELDS = ["bgOffsetXPct", "bgOffsetYPct", "textOffsetXPct", "textOffsetYPct"];
+const FONT_SIZE_MIN = 50;
+const FONT_SIZE_MAX = 250;
 const TEXT_ALIGN_VALUES = new Set(["top", "middle", "bottom"]);
 const TEXT_HALIGN_VALUES = new Set(["left", "center", "right"]);
 const FONT_FAMILY_VALUES = new Set(["default", "arial", "serif", "sans", "condensed", "rounded"]);
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 function sanitizeLayout(raw) {
   const layout = {};
@@ -379,19 +382,32 @@ function sanitizeLayout(raw) {
       layout[field] = Math.min(LAYOUT_OFFSET_MAX, Math.max(LAYOUT_OFFSET_MIN, raw[field]));
     }
   }
+  if (raw && typeof raw.fontSizePct === "number" && isFinite(raw.fontSizePct)) {
+    layout.fontSizePct = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, raw.fontSizePct));
+  }
   if (raw && TEXT_ALIGN_VALUES.has(raw.textAlign)) layout.textAlign = raw.textAlign;
   if (raw && TEXT_HALIGN_VALUES.has(raw.textHAlign)) layout.textHAlign = raw.textHAlign;
   if (raw && FONT_FAMILY_VALUES.has(raw.fontFamily)) layout.fontFamily = raw.fontFamily;
   if (raw && typeof raw.bold === "boolean") layout.bold = raw.bold;
   if (raw && typeof raw.italic === "boolean") layout.italic = raw.italic;
   if (raw && typeof raw.allCaps === "boolean") layout.allCaps = raw.allCaps;
+  if (raw && typeof raw.color === "string" && HEX_COLOR_RE.test(raw.color)) layout.color = raw.color;
   return layout;
 }
 
 // layout applies to scripture/lyric/announcement's shared lower-third box;
-// titleCardLayout is a completely independent size/position for the
-// automatic song-title-card slide, so resizing one never moves the other.
-let state = { visible: false, current: null, textScale: 1, layout: {}, titleCardLayout: {} };
+// titleCardLayout is the song title card's title text (+ its background);
+// titleCardSubtitleLayout is the "LoveWorld Singers" byline underneath it -
+// a fully independent box so it can be sized/positioned/colored on its own,
+// with none of the three ever affecting each other's resizing/position.
+let state = {
+  visible: false,
+  current: null,
+  textScale: 1,
+  layout: {},
+  titleCardLayout: {},
+  titleCardSubtitleLayout: {},
+};
 
 function broadcast(message) {
   const payload = JSON.stringify(message);
@@ -409,6 +425,7 @@ wss.on("connection", (ws) => {
       textScale: state.textScale,
       layout: state.layout,
       titleCardLayout: state.titleCardLayout,
+      titleCardSubtitleLayout: state.titleCardSubtitleLayout,
     })
   );
 
@@ -426,13 +443,21 @@ wss.on("connection", (ws) => {
         textScale: state.textScale,
         layout: state.layout,
         titleCardLayout: state.titleCardLayout,
+        titleCardSubtitleLayout: state.titleCardSubtitleLayout,
       };
       broadcast({ type: "show", slideType: msg.slideType, content: msg.content });
     } else if (msg.type === "update" && msg.content && state.current) {
       state.current.content = msg.content;
       broadcast({ type: "update", content: msg.content });
     } else if (msg.type === "hide") {
-      state = { visible: false, current: state.current, textScale: state.textScale, layout: state.layout, titleCardLayout: state.titleCardLayout };
+      state = {
+        visible: false,
+        current: state.current,
+        textScale: state.textScale,
+        layout: state.layout,
+        titleCardLayout: state.titleCardLayout,
+        titleCardSubtitleLayout: state.titleCardSubtitleLayout,
+      };
       broadcast({ type: "hide" });
     } else if (msg.type === "textScale" && typeof msg.scale === "number") {
       state.textScale = Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, msg.scale));
@@ -443,6 +468,9 @@ wss.on("connection", (ws) => {
     } else if (msg.type === "titleCardLayout" && msg.layout && typeof msg.layout === "object") {
       state.titleCardLayout = sanitizeLayout(msg.layout);
       broadcast({ type: "titleCardLayout", layout: state.titleCardLayout });
+    } else if (msg.type === "titleCardSubtitleLayout" && msg.layout && typeof msg.layout === "object") {
+      state.titleCardSubtitleLayout = sanitizeLayout(msg.layout);
+      broadcast({ type: "titleCardSubtitleLayout", layout: state.titleCardSubtitleLayout });
     }
   });
 });
