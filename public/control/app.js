@@ -939,8 +939,10 @@
   // the size the README tells operators to set the Browser Source to. Since
   // display/style.css's font-size clamp() maxes out well below what 1920px's
   // vw value would otherwise produce (e.g. 3vw = 57.6px vs a 46px cap), the
-  // effective font size at that canvas width is just the cap * text scale,
-  // which is what's reproduced here.
+  // effective font size at that canvas width is just the cap * text scale *
+  // the panel's own "Text size" multiplier (fontSizePct), which is what's
+  // reproduced here - all three factors, matching display/style.css exactly,
+  // or a bigger Text size setting silently overflows the box on screen.
   // ============================================================
 
   const MAX_LINES_PER_PART = 3;
@@ -1019,7 +1021,7 @@
 
     const originalWords = trimmed.split(/\s+/);
     const measureWords = layoutCtl.value.allCaps ? originalWords.map((w) => w.toUpperCase()) : originalWords;
-    const fontPx = clampPx(24, 0.03, 46) * textScale;
+    const fontPx = clampPx(24, 0.03, 46) * textScale * ((layoutCtl.value.fontSizePct || 100) / 100);
     const font = measureFontFor("scripture", fontPx);
     const wrappedLines = wrapIndicesToLines(measureWords, font, availableTextWidthPx());
 
@@ -1040,7 +1042,7 @@
     const safeLines = Array.isArray(lines) ? lines : [];
     if (safeLines.length === 0) return [[]];
 
-    const fontPx = clampPx(24, 0.031, 48) * textScale;
+    const fontPx = clampPx(24, 0.031, 48) * textScale * ((layoutCtl.value.fontSizePct || 100) / 100);
     const font = measureFontFor("lyric", fontPx);
     const maxWidthPx = availableTextWidthPx();
 
