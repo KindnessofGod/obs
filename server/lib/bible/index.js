@@ -177,6 +177,18 @@ function searchOffline(query, translationIds) {
   if (reference) {
     return searchByReference(reference, translations);
   }
+
+  // A bare, unambiguous book name with no chapter/verse yet (e.g. "psalms",
+  // "joshua") should show that book's whole first chapter - not a keyword
+  // search for the book's name as an ordinary word, which pulls in unrelated
+  // verses from *other* books that happen to mention it (e.g. the person
+  // Joshua, named throughout Exodus/Numbers/Deuteronomy) instead of the
+  // book the operator actually named.
+  const bareBook = resolveUniqueBookPrefix(trimmed);
+  if (bareBook) {
+    return searchByReference({ book: bareBook, chapter: 1, verse: null, verseEnd: null }, translations);
+  }
+
   return searchByKeyword(trimmed, translations);
 }
 
@@ -229,14 +241,6 @@ function searchByKeyword(query, translations) {
   const phraseRe = new RegExp(`\\b${escapeRegExp(phrase.split(/\s+/).filter(Boolean).slice(0, MAX_KEYWORD_TOKENS).join(" "))}\\b`);
   const tokenRes = tokens.map((tok) => new RegExp(`\\b${escapeRegExp(tok)}\\b`));
 
-  // A query that happens to be a Bible book name (e.g. "joshua") is also just
-  // an ordinary word that can appear in *other* books' text (e.g. the person
-  // Joshua, mentioned in Exodus/Numbers/Deuteronomy). Without this, which
-  // book "won" a tie within the same rank was really just canonical book
-  // order (Exodus comes before Joshua) rather than relevance. Boost matches
-  // actually in the named book above same-tier matches elsewhere.
-  const namedBook = resolveBookAlias(phrase);
-
   const scored = [];
   for (const t of translations) {
     for (const entry of t.verseIndex) {
@@ -250,7 +254,6 @@ function searchByKeyword(query, translations) {
       } else {
         continue;
       }
-      if (namedBook && entry.book === namedBook) rank -= 3; // outranks every non-boosted tier
       scored.push({
         rank,
         result: {
