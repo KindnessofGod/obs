@@ -80,27 +80,50 @@ function decodeEntities(str) {
     .replace(/&gt;/g, ">");
 }
 
-function extractVerseText(html) {
-  const exportMatch = html.match(/<verse_export\b[^>]*>([\s\S]*?)<\/verse_export>/i);
-  if (!exportMatch) return "";
-
-  let inner = exportMatch[1];
+function cleanVerseHtml(inner) {
   // Verse 1 of a chapter comes bundled with chapter/section furniture -
   // heading tags (chapter number, section subheads) and Psalm-style
   // superscriptions ("A psalm of David.", class="psa-title") - none of
   // which is actual verse text, so strip them before anything else.
-  inner = inner.replace(/<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>/gi, "");
-  inner = inner.replace(/<p\b[^>]*class="[^"]*title[^"]*"[^>]*>[\s\S]*?<\/p>/gi, "");
-  inner = stripNestedElement(inner, "span", "tn"); // footnote text
-  inner = inner.replace(/<a\b[^>]*class="a-tn"[^>]*>[\s\S]*?<\/a>/gi, ""); // footnote marker
-  inner = stripNestedElement(inner, "span", "vn"); // verse number
-  inner = inner.replace(/<[^>]+>/g, ""); // everything else is just a wrapper tag
-  inner = decodeEntities(inner);
-  return inner.replace(/\s+/g, " ").trim();
+  let out = inner.replace(/<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>/gi, "");
+  out = out.replace(/<p\b[^>]*class="[^"]*title[^"]*"[^>]*>[\s\S]*?<\/p>/gi, "");
+  out = stripNestedElement(out, "span", "tn"); // footnote text
+  out = out.replace(/<a\b[^>]*class="a-tn"[^>]*>[\s\S]*?<\/a>/gi, ""); // footnote marker
+  out = stripNestedElement(out, "span", "vn"); // verse number
+  out = out.replace(/<[^>]+>/g, ""); // everything else is just a wrapper tag
+  out = decodeEntities(out);
+  return out.replace(/\s+/g, " ").trim();
 }
 
-async function fetchVerse(book, chapter, verse, apiKey) {
-  const ref = `${nltBookRef(book)}.${chapter}.${verse}`;
+// A "ref" can name a single verse, a range, or a whole chapter (see
+// fetchPassage below) - in every case the response has one <verse_export
+// ... vn="N"> block per verse, so this always returns a list, even for a
+// single verse.
+function parseVerseExports(html) {
+  const results = [];
+  const re = /<verse_export\b([^>]*)>([\s\S]*?)<\/verse_export>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const vnMatch = m[1].match(/\bvn="(\d+)"/);
+    if (!vnMatch) continue;
+    const text = cleanVerseHtml(m[2]);
+    if (text) results.push({ verse: Number(vnMatch[1]), text });
+  }
+  return results;
+}
+
+// verseStart/verseEnd both null -> whole chapter; verseEnd null -> single
+// verse; otherwise a range - all resolved in ONE request (confirmed live:
+// "John.3", "John.3.16", and "John.3.16-18" all work), rather than one
+// request per verse, since anonymous/free-tier access is rate-limited by
+// request count per day.
+async function fetchPassage(book, chapter, verseStart, verseEnd, apiKey) {
+  const bookRef = nltBookRef(book);
+  let ref = `${bookRef}.${chapter}`;
+  if (verseStart != null) {
+    ref += `.${verseStart}`;
+    if (verseEnd != null && verseEnd !== verseStart) ref += `-${verseEnd}`;
+  }
   const params = new URLSearchParams({ ref, version: "NLT" });
   if (apiKey) params.set("key", apiKey);
 
@@ -110,18 +133,22 @@ async function fetchVerse(book, chapter, verse, apiKey) {
   } catch (err) {
     throw new NltApiError(`NLT API request failed: ${err.message}`);
   }
-
   if (!res.ok) {
     throw new NltApiError(`NLT API returned HTTP ${res.status}`);
   }
 
   const html = await res.text();
-  const text = extractVerseText(html);
-  if (!text) {
+  const verses = parseVerseExports(html);
+  if (verses.length === 0) {
     throw new NltApiError(`NLT API returned no text for "${ref}"`);
   }
 
-  return { book, chapter: Number(chapter), verse: Number(verse), text };
+  return verses.map((v) => ({ book, chapter: Number(chapter), verse: v.verse, text: v.text }));
 }
 
-module.exports = { fetchVerse, NltApiError };
+async function fetchVerse(book, chapter, verse, apiKey) {
+  const [result] = await fetchPassage(book, chapter, verse, verse, apiKey);
+  return result;
+}
+
+module.exports = { fetchVerse, fetchPassage, NltApiError };

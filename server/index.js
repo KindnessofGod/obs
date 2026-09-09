@@ -11,6 +11,7 @@ const migration = require("./lib/migration");
 const PORT = process.env.PORT || 3210;
 const DATA_DIR = path.join(__dirname, "..", "data");
 const SONGS_DIR = path.join(DATA_DIR, "songs");
+const DEVOTIONALS_DIR = path.join(DATA_DIR, "devotionals");
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements", "announcements.json");
 const SCRIPTURE_BOOKMARKS_FILE = path.join(DATA_DIR, "scripture-bookmarks", "bookmarks.json");
 const SETLIST_FILE = path.join(DATA_DIR, "setlist.json"); // legacy single-setlist file, kept only for one-time migration
@@ -29,7 +30,7 @@ app.get("/api/bible/translations", (req, res) => {
   res.json(bible.listTranslations());
 });
 
-app.get("/api/bible/search", (req, res) => {
+app.get("/api/bible/search", async (req, res) => {
   const q = String(req.query.q || "").trim();
   const translationIds = String(req.query.translations || "")
     .split(",")
@@ -40,7 +41,20 @@ app.get("/api/bible/search", (req, res) => {
   // auto-jump straight to that book's chapter 1 for speed.
   const bookMatch = bible.resolveUniqueBookPrefix(q);
   if (!q || translationIds.length === 0) return res.json({ results: [], bookMatch });
-  res.json({ results: bible.searchOffline(q, translationIds), bookMatch });
+
+  // searchOffline only ever looks at in-memory public-domain data, so a
+  // licensed translation (ESV/NLT/NIV/AMP) needs its own live path -
+  // otherwise it always came back with zero results, even for a plain
+  // "jn 3:16" (see searchLicensed in server/lib/bible/index.js for why).
+  const offlineIds = translationIds.filter((id) => !bible.isLicensedTranslation(id));
+  const licensedIds = translationIds.filter((id) => bible.isLicensedTranslation(id));
+
+  let results = bible.searchOffline(q, offlineIds);
+  for (const id of licensedIds) {
+    const licensedResults = await bible.searchLicensed(q, id);
+    results = results.concat(licensedResults);
+  }
+  res.json({ results, bookMatch });
 });
 
 app.get("/api/bible/verse", async (req, res) => {
@@ -168,6 +182,87 @@ app.post("/api/songs/import", upload.single("file"), async (req, res) => {
   } finally {
     fs.unlink(req.file.path, () => {});
   }
+});
+
+// ---- Devotionals ----
+// Full-screen daily devotional slides (Rhapsody of Realities, Teevo, etc.) -
+// the exact same { id, title, slides: [{label, lines}] } shape as songs (see
+// isValidSlides above), persisted the same way in their own directory, so a
+// long devotional pasted in one block can be split into slides and saved
+// for reuse just like a song.
+
+function readDevotionalIndex() {
+  if (!fs.existsSync(DEVOTIONALS_DIR)) return [];
+  return fs
+    .readdirSync(DEVOTIONALS_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => {
+      const d = JSON.parse(fs.readFileSync(path.join(DEVOTIONALS_DIR, f), "utf8"));
+      return { id: d.id, title: d.title };
+    });
+}
+
+app.get("/api/devotionals", (req, res) => {
+  res.json(readDevotionalIndex());
+});
+
+// Same path-traversal guard as songFilePath above.
+function devotionalFilePath(id) {
+  const file = path.join(DEVOTIONALS_DIR, `${id}.json`);
+  return file.startsWith(DEVOTIONALS_DIR + path.sep) ? file : null;
+}
+
+function loadExistingDevotionalIds() {
+  if (!fs.existsSync(DEVOTIONALS_DIR)) return new Set();
+  return new Set(
+    fs
+      .readdirSync(DEVOTIONALS_DIR)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => f.slice(0, -".json".length))
+  );
+}
+
+app.post("/api/devotionals", (req, res) => {
+  const { title, slides } = req.body || {};
+  if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "title is required" });
+  const finalSlides = slides === undefined ? [{ label: "Slide 1", lines: [""] }] : slides;
+  if (!isValidSlides(finalSlides)) {
+    return res.status(400).json({ error: "slides must be an array of { label: string, lines: string[] }" });
+  }
+  if (!fs.existsSync(DEVOTIONALS_DIR)) fs.mkdirSync(DEVOTIONALS_DIR, { recursive: true });
+  const id = migration.uniqueId(migration.slugify(title), loadExistingDevotionalIds());
+  const devotional = { id, title: title.trim(), slides: finalSlides };
+  fs.writeFileSync(devotionalFilePath(id), JSON.stringify(devotional, null, 2));
+  res.status(201).json(devotional);
+});
+
+app.get("/api/devotionals/:id", (req, res) => {
+  const file = devotionalFilePath(req.params.id);
+  if (!file) return res.status(400).json({ error: "invalid devotional id" });
+  if (!fs.existsSync(file)) return res.status(404).json({ error: "devotional not found" });
+  res.json(JSON.parse(fs.readFileSync(file, "utf8")));
+});
+
+app.put("/api/devotionals/:id", (req, res) => {
+  const file = devotionalFilePath(req.params.id);
+  if (!file) return res.status(400).json({ error: "invalid devotional id" });
+  if (!fs.existsSync(file)) return res.status(404).json({ error: "devotional not found" });
+  const { title, slides } = req.body || {};
+  if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "title is required" });
+  if (!isValidSlides(slides)) {
+    return res.status(400).json({ error: "slides must be an array of { label: string, lines: string[] }" });
+  }
+  const devotional = { id: req.params.id, title: title.trim(), slides };
+  fs.writeFileSync(file, JSON.stringify(devotional, null, 2));
+  res.json(devotional);
+});
+
+app.delete("/api/devotionals/:id", (req, res) => {
+  const file = devotionalFilePath(req.params.id);
+  if (!file) return res.status(400).json({ error: "invalid devotional id" });
+  if (!fs.existsSync(file)) return res.status(404).json({ error: "devotional not found" });
+  fs.unlinkSync(file);
+  res.json({ ok: true });
 });
 
 // ---- Setlists ----
@@ -395,18 +490,24 @@ function sanitizeLayout(raw) {
   return layout;
 }
 
-// layout applies to scripture/lyric/announcement's shared lower-third box;
+// layout applies to scripture/announcement's shared lower-third box;
+// lyricLayout is song lyrics' own independent box (font/boldness/position/
+// the works, tunable without touching scripture or announcements);
 // titleCardLayout is the song title card's title text (+ its background);
-// titleCardSubtitleLayout is the "LoveWorld Singers" byline underneath it -
-// a fully independent box so it can be sized/positioned/colored on its own,
-// with none of the three ever affecting each other's resizing/position.
+// titleCardSubtitleLayout is the "LoveWorld Singers" byline underneath it;
+// devotionalLayout is the full-screen devotional slide's background+text box
+// (Rhapsody of Realities, Teevo, etc.) - each a fully independent box so it
+// can be sized/positioned/colored on its own, with none of these ever
+// affecting each other's resizing/position.
 let state = {
   visible: false,
   current: null,
   textScale: 1,
   layout: {},
+  lyricLayout: {},
   titleCardLayout: {},
   titleCardSubtitleLayout: {},
+  devotionalLayout: {},
 };
 
 function broadcast(message) {
@@ -424,8 +525,10 @@ wss.on("connection", (ws) => {
       current: state.current,
       textScale: state.textScale,
       layout: state.layout,
+      lyricLayout: state.lyricLayout,
       titleCardLayout: state.titleCardLayout,
       titleCardSubtitleLayout: state.titleCardSubtitleLayout,
+      devotionalLayout: state.devotionalLayout,
     })
   );
 
@@ -442,8 +545,10 @@ wss.on("connection", (ws) => {
         current: { slideType: msg.slideType, content: msg.content },
         textScale: state.textScale,
         layout: state.layout,
+        lyricLayout: state.lyricLayout,
         titleCardLayout: state.titleCardLayout,
         titleCardSubtitleLayout: state.titleCardSubtitleLayout,
+        devotionalLayout: state.devotionalLayout,
       };
       broadcast({ type: "show", slideType: msg.slideType, content: msg.content });
     } else if (msg.type === "update" && msg.content && state.current) {
@@ -455,8 +560,10 @@ wss.on("connection", (ws) => {
         current: state.current,
         textScale: state.textScale,
         layout: state.layout,
+        lyricLayout: state.lyricLayout,
         titleCardLayout: state.titleCardLayout,
         titleCardSubtitleLayout: state.titleCardSubtitleLayout,
+        devotionalLayout: state.devotionalLayout,
       };
       broadcast({ type: "hide" });
     } else if (msg.type === "textScale" && typeof msg.scale === "number") {
@@ -465,12 +572,18 @@ wss.on("connection", (ws) => {
     } else if (msg.type === "layout" && msg.layout && typeof msg.layout === "object") {
       state.layout = sanitizeLayout(msg.layout);
       broadcast({ type: "layout", layout: state.layout });
+    } else if (msg.type === "lyricLayout" && msg.layout && typeof msg.layout === "object") {
+      state.lyricLayout = sanitizeLayout(msg.layout);
+      broadcast({ type: "lyricLayout", layout: state.lyricLayout });
     } else if (msg.type === "titleCardLayout" && msg.layout && typeof msg.layout === "object") {
       state.titleCardLayout = sanitizeLayout(msg.layout);
       broadcast({ type: "titleCardLayout", layout: state.titleCardLayout });
     } else if (msg.type === "titleCardSubtitleLayout" && msg.layout && typeof msg.layout === "object") {
       state.titleCardSubtitleLayout = sanitizeLayout(msg.layout);
       broadcast({ type: "titleCardSubtitleLayout", layout: state.titleCardSubtitleLayout });
+    } else if (msg.type === "devotionalLayout" && msg.layout && typeof msg.layout === "object") {
+      state.devotionalLayout = sanitizeLayout(msg.layout);
+      broadcast({ type: "devotionalLayout", layout: state.devotionalLayout });
     }
   });
 });

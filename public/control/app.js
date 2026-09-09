@@ -59,8 +59,10 @@
       // the server was restarted since they were last set.
       send({ type: "textScale", scale: textScale });
       send({ type: "layout", layout: layoutCtl.value });
+      send({ type: "lyricLayout", layout: lyricLayoutCtl.value });
       send({ type: "titleCardLayout", layout: titleCardLayoutCtl.value });
       send({ type: "titleCardSubtitleLayout", layout: titleCardSubtitleLayoutCtl.value });
+      send({ type: "devotionalLayout", layout: devotionalLayoutCtl.value });
     });
 
     ws.addEventListener("close", () => {
@@ -129,6 +131,7 @@
     else if (slideType === "lyric") text = `${content.songTitle} — ${content.slideLabel}`;
     else if (slideType === "songtitle") text = `${content.title} — Title card`;
     else if (slideType === "announcement") text = content.title;
+    else if (slideType === "devotional") text = `${content.title || "Devotional"} — ${content.slideLabel || ""}`;
     liveBannerEl.innerHTML = `<span class="live-kind">${slideType}</span>${escapeHtml(text)}`;
   }
 
@@ -138,18 +141,24 @@
       if (msg.visible && msg.current) reconcileLiveState(msg.current);
       if (typeof msg.textScale === "number") syncTextScale(msg.textScale);
       if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
+      if (msg.lyricLayout && typeof msg.lyricLayout === "object") syncLyricLayout(msg.lyricLayout);
       if (msg.titleCardLayout && typeof msg.titleCardLayout === "object") syncTitleCardLayout(msg.titleCardLayout);
       if (msg.titleCardSubtitleLayout && typeof msg.titleCardSubtitleLayout === "object") {
         syncTitleCardSubtitleLayout(msg.titleCardSubtitleLayout);
       }
+      if (msg.devotionalLayout && typeof msg.devotionalLayout === "object") syncDevotionalLayout(msg.devotionalLayout);
     } else if (msg.type === "textScale") {
       if (typeof msg.scale === "number") syncTextScale(msg.scale);
     } else if (msg.type === "layout") {
       if (msg.layout && typeof msg.layout === "object") syncLayout(msg.layout);
+    } else if (msg.type === "lyricLayout") {
+      if (msg.layout && typeof msg.layout === "object") syncLyricLayout(msg.layout);
     } else if (msg.type === "titleCardLayout") {
       if (msg.layout && typeof msg.layout === "object") syncTitleCardLayout(msg.layout);
     } else if (msg.type === "titleCardSubtitleLayout") {
       if (msg.layout && typeof msg.layout === "object") syncTitleCardSubtitleLayout(msg.layout);
+    } else if (msg.type === "devotionalLayout") {
+      if (msg.layout && typeof msg.layout === "object") syncDevotionalLayout(msg.layout);
     } else if (msg.type === "show") {
       renderLiveBanner(true, { slideType: msg.slideType, content: msg.content });
       reconcileLiveState({ slideType: msg.slideType, content: msg.content });
@@ -273,14 +282,15 @@
   // ============================================================
 
   let availableBackgrounds = [];
-  let selectedBackgrounds = { scripture: null, lyric: null, announcement: null, songtitle: null };
-  let lastContent = { scripture: null, lyric: null, announcement: null, songtitle: null };
+  let selectedBackgrounds = { scripture: null, lyric: null, announcement: null, songtitle: null, devotional: null };
+  let lastContent = { scripture: null, lyric: null, announcement: null, songtitle: null, devotional: null };
 
   const bgSelectEls = {
     scripture: document.getElementById("scriptureBgSelect"),
     lyric: document.getElementById("lyricBgSelect"),
     announcement: document.getElementById("announcementBgSelect"),
     songtitle: document.getElementById("titleCardBgSelect"),
+    devotional: document.getElementById("devotionalBgSelect"),
   };
 
   async function loadBackgrounds() {
@@ -298,7 +308,7 @@
     } catch {
       saved = null;
     }
-    selectedBackgrounds = { scripture: null, lyric: null, announcement: null, songtitle: null, ...(saved || {}) };
+    selectedBackgrounds = { scripture: null, lyric: null, announcement: null, songtitle: null, devotional: null, ...(saved || {}) };
 
     // Nothing chosen yet but exactly one background exists (the common case,
     // one custom lower-third graphic) — auto-select it so it works immediately.
@@ -399,6 +409,7 @@
     else if (slideType === "lyric") text = `${content.songTitle} — ${content.slideLabel}`;
     else if (slideType === "songtitle") text = `${content.title} — Title card`;
     else if (slideType === "announcement") text = content.title;
+    else if (slideType === "devotional") text = `${content.title || "Devotional"} — ${content.slideLabel || ""}`;
     stagedTextEl.innerHTML = `<span class="live-kind">${slideType}</span>${escapeHtml(text)}`;
     displayLiveBtn.disabled = false;
   }
@@ -417,8 +428,10 @@
   // localStorage, preview echo, all included).
   const PREVIEW_DRAG_TARGETS = {
     layout: () => layoutCtl,
+    lyricLayout: () => lyricLayoutCtl,
     titleCardLayout: () => titleCardLayoutCtl,
     titleCardSubtitleLayout: () => titleCardSubtitleLayoutCtl,
+    devotionalLayout: () => devotionalLayoutCtl,
   };
   window.addEventListener("message", (evt) => {
     if (evt.source !== previewFrame.contentWindow || evt.origin !== window.location.origin) return;
@@ -446,8 +459,10 @@
     pushPreview();
     postToPreview({ type: "textScale", scale: textScale });
     postToPreview({ type: "layout", layout: layoutCtl.value });
+    postToPreview({ type: "lyricLayout", layout: lyricLayoutCtl.value });
     postToPreview({ type: "titleCardLayout", layout: titleCardLayoutCtl.value });
     postToPreview({ type: "titleCardSubtitleLayout", layout: titleCardSubtitleLayoutCtl.value });
+    postToPreview({ type: "devotionalLayout", layout: devotionalLayoutCtl.value });
   });
 
   function stage(slideType, content) {
@@ -480,6 +495,7 @@
     sendShow(staged.slideType, staged.content);
     if (staged.slideType === "scripture") currentScriptureIsLive = true;
     if (staged.slideType === "lyric") currentLyricIsLive = true;
+    if (staged.slideType === "devotional") currentDevoIsLive = true;
     clearStaged();
   });
 
@@ -487,9 +503,10 @@
   // Layout: independent background-box and text-box dimensions. Background
   // size and text size are deliberately separate controls (per operator
   // request) so e.g. a bigger background graphic doesn't force bigger text,
-  // or vice versa. Two independent instances of this exist - one for the
-  // shared scripture/lyric/announcement lower-third box, one for the
-  // automatic song-title-card slide - so resizing one never moves the other.
+  // or vice versa. Several independent instances of this exist - one for the
+  // shared scripture/announcement lower-third box, one for song lyrics, one
+  // for the automatic song-title-card slide, etc. - so resizing one never
+  // moves another.
   // ============================================================
 
   const LAYOUT_DEFAULTS = {
@@ -510,6 +527,41 @@
     allCaps: false,
     color: "#fdfaf2",
   };
+
+  // Song lyrics used to share LAYOUT_DEFAULTS/the main `layout` box above
+  // with scripture/announcements (font/boldness/size/box dimensions applied
+  // to all three at once; only textAlign/textHAlign never actually affected
+  // lyrics, which were always hardcoded centered in CSS). Now independent,
+  // per operator request ("modify how the song lyrics look... font, to
+  // boldness, to position") - same shape, but centered by default to match
+  // the look lyrics have always actually had, rather than inheriting
+  // scripture's bottom/left default (which was never visually active for
+  // lyrics before, so blindly reusing it here would be a surprise change).
+  const LYRIC_LAYOUT_DEFAULTS = {
+    ...LAYOUT_DEFAULTS,
+    textAlign: "middle",
+    textHAlign: "center",
+  };
+
+  // One-time migration: seed the new independent lyric box from whatever the
+  // shared box already has saved (so this split doesn't change anything
+  // already on screen the moment it ships), except textAlign/textHAlign -
+  // the shared box's saved value there was never actually applied to lyrics
+  // (see above), so inheriting it verbatim could suddenly move lyric text
+  // away from center. Guarded to run only once: after the first save under
+  // the new key, the two are independent and this must never re-sync them.
+  if (localStorage.getItem("obs-control:lyricLayout") === null) {
+    let lyricSeed = { ...LYRIC_LAYOUT_DEFAULTS };
+    try {
+      const sharedSaved = JSON.parse(localStorage.getItem("obs-control:layout") || "null");
+      if (sharedSaved && typeof sharedSaved === "object") {
+        lyricSeed = { ...LYRIC_LAYOUT_DEFAULTS, ...sharedSaved, textAlign: "middle", textHAlign: "center" };
+      }
+    } catch {
+      // ignore corrupt storage, fall back to LYRIC_LAYOUT_DEFAULTS
+    }
+    localStorage.setItem("obs-control:lyricLayout", JSON.stringify(lyricSeed));
+  }
 
   const TITLE_CARD_LAYOUT_DEFAULTS = {
     bgWidthPct: 55,
@@ -547,6 +599,32 @@
     italic: false,
     allCaps: true,
     color: "#f4e2a1",
+  };
+
+  // Full-screen devotional slide (Rhapsody of Realities, Teevo, etc.) - unlike
+  // the lower-third-anchored boxes above, both the background and text box
+  // default to filling the entire screen (100%/100%, explicit height rather
+  // than auto-aspect, so a full custom graphic covers edge-to-edge with no
+  // letterboxing by default) with the text centered on both axes within it.
+  // Still fully independent from every other layout above, and still fully
+  // resizable/draggable via the exact same controls/machinery.
+  const DEVOTIONAL_LAYOUT_DEFAULTS = {
+    bgWidthPct: 100,
+    bgHeightPct: 100,
+    bgOffsetXPct: 0,
+    bgOffsetYPct: 0,
+    textWidthPct: 100,
+    textHeightPct: 100,
+    textOffsetXPct: 0,
+    textOffsetYPct: 0,
+    fontSizePct: 100,
+    textAlign: "middle",
+    textHAlign: "center",
+    fontFamily: "arial",
+    bold: false,
+    italic: false,
+    allCaps: false,
+    color: "#fdfaf2",
   };
 
   // Builds one independent layout controller bound to a set of DOM element
@@ -756,6 +834,40 @@
     "layout"
   );
 
+  const lyricLayoutCtl = createLayoutController(
+    {
+      bgWidthRange: "lyrBgWidthRange",
+      bgWidthValue: "lyrBgWidthValue",
+      bgHeightAutoCheckbox: "lyrBgHeightAutoCheckbox",
+      bgHeightRange: "lyrBgHeightRange",
+      bgHeightValue: "lyrBgHeightValue",
+      bgOffsetPad: "lyrBgOffsetPad",
+      bgOffsetXValue: "lyrBgOffsetXValue",
+      bgOffsetYValue: "lyrBgOffsetYValue",
+      textWidthRange: "lyrTextWidthRange",
+      textWidthValue: "lyrTextWidthValue",
+      textHeightRange: "lyrTextHeightRange",
+      textHeightValue: "lyrTextHeightValue",
+      textOffsetPad: "lyrTextOffsetPad",
+      textOffsetXValue: "lyrTextOffsetXValue",
+      textOffsetYValue: "lyrTextOffsetYValue",
+      fontSizeRange: "lyrFontSizeRange",
+      fontSizeValue: "lyrFontSizeValue",
+      textAlignSelect: "lyrTextAlignSelect",
+      textHAlignSelect: "lyrTextHAlignSelect",
+      fontFamilySelect: "lyrFontFamilySelect",
+      boldCheckbox: "lyrBoldCheckbox",
+      italicCheckbox: "lyrItalicCheckbox",
+      allCapsCheckbox: "lyrAllCapsCheckbox",
+      colorInput: "lyrColorInput",
+      resetBtn: "lyrLayoutResetBtn",
+      saveDefaultBtn: "lyrSaveDefaultBtn",
+    },
+    LYRIC_LAYOUT_DEFAULTS,
+    "obs-control:lyricLayout",
+    "lyricLayout"
+  );
+
   const titleCardLayoutCtl = createLayoutController(
     {
       bgWidthRange: "tcBgWidthRange",
@@ -820,6 +932,40 @@
     "titleCardSubtitleLayout"
   );
 
+  const devotionalLayoutCtl = createLayoutController(
+    {
+      bgWidthRange: "devoBgWidthRange",
+      bgWidthValue: "devoBgWidthValue",
+      bgHeightAutoCheckbox: "devoBgHeightAutoCheckbox",
+      bgHeightRange: "devoBgHeightRange",
+      bgHeightValue: "devoBgHeightValue",
+      bgOffsetPad: "devoBgOffsetPad",
+      bgOffsetXValue: "devoBgOffsetXValue",
+      bgOffsetYValue: "devoBgOffsetYValue",
+      textWidthRange: "devoTextWidthRange",
+      textWidthValue: "devoTextWidthValue",
+      textHeightRange: "devoTextHeightRange",
+      textHeightValue: "devoTextHeightValue",
+      textOffsetPad: "devoTextOffsetPad",
+      textOffsetXValue: "devoTextOffsetXValue",
+      textOffsetYValue: "devoTextOffsetYValue",
+      fontSizeRange: "devoFontSizeRange",
+      fontSizeValue: "devoFontSizeValue",
+      textAlignSelect: "devoTextAlignSelect",
+      textHAlignSelect: "devoTextHAlignSelect",
+      fontFamilySelect: "devoFontFamilySelect",
+      boldCheckbox: "devoBoldCheckbox",
+      italicCheckbox: "devoItalicCheckbox",
+      allCapsCheckbox: "devoAllCapsCheckbox",
+      colorInput: "devoColorInput",
+      resetBtn: "devoLayoutResetBtn",
+      saveDefaultBtn: "devoSaveDefaultBtn",
+    },
+    DEVOTIONAL_LAYOUT_DEFAULTS,
+    "obs-control:devotionalLayout",
+    "devotionalLayout"
+  );
+
   // `layout`/`setLayout`/`syncLayout` kept as the names the rest of this
   // file (WS open handler, handleServerMessage, previewFrame load) already
   // uses for the main (non-title-card) layout.
@@ -829,11 +975,17 @@
   function syncLayout(next) {
     layoutCtl.sync(next);
   }
+  function syncLyricLayout(next) {
+    lyricLayoutCtl.sync(next);
+  }
   function syncTitleCardLayout(next) {
     titleCardLayoutCtl.sync(next);
   }
   function syncTitleCardSubtitleLayout(next) {
     titleCardSubtitleLayoutCtl.sync(next);
+  }
+  function syncDevotionalLayout(next) {
+    devotionalLayoutCtl.sync(next);
   }
 
   // ============================================================
@@ -863,6 +1015,7 @@
       });
     }
     if (name === "announcements") loadAnnouncements();
+    if (name === "devotional") ensureDevotionalsLoaded();
     if (name === "preview") pushPreview();
   }
 
@@ -877,6 +1030,7 @@
     // (previewing) rather than pushing invisible live updates.
     currentScriptureIsLive = false;
     currentLyricIsLive = false;
+    currentDevoIsLive = false;
   });
 
   // ============================================================
@@ -2448,6 +2602,345 @@
     } catch {
       annSaveStatusEl.textContent = "Save failed.";
       annSaveStatusEl.style.color = "var(--danger)";
+    }
+  });
+
+  // ============================================================
+  // Devotional tab (Rhapsody of Realities, Teevo, etc.) — full-screen,
+  // centered-on-both-axes text over a full custom background graphic.
+  // Saved to disk just like songs (same { id, title, slides } shape, same
+  // /api/devotionals CRUD as /api/songs) so a devotional can be reopened
+  // later, not just displayed once and forgotten. Deliberately simpler than
+  // the song reader though: no automatic title-card slide (the topic/title
+  // is just shown on every slide alongside its own lines, see
+  // devoContentForSlide), and no line-count-based "parts" pagination (a
+  // full-screen slide has far more room than a lower third, so each pasted
+  // paragraph is just its own slide as-is).
+  // ============================================================
+
+  const devotionalsIndexViewEl = document.getElementById("devotionalsIndexView");
+  const devotionalDetailViewEl = document.getElementById("devotionalDetailView");
+  const devotionalSearchEl = document.getElementById("devotionalSearch");
+  const devotionalListEl = document.getElementById("devotionalList");
+  const devotionalDetailTitleEl = document.getElementById("devotionalDetailTitle");
+  const devoSlideNavEl = document.getElementById("devoSlideNav");
+  const devoSlideListEl = document.getElementById("devoSlideList");
+  const currentDevoSlideLabelEl = document.getElementById("currentDevoSlideLabel");
+  const prevDevoSlideBtn = document.getElementById("prevDevoSlideBtn");
+  const nextDevoSlideBtn = document.getElementById("nextDevoSlideBtn");
+  const editDevotionalBtn = document.getElementById("editDevotionalBtn");
+  const devoEditPanelEl = document.getElementById("devoEditPanel");
+  const devoEditTitleInput = document.getElementById("devoEditTitleInput");
+  const devoEditPasteTextEl = document.getElementById("devoEditPasteText");
+  const devoEditSlidesEl = document.getElementById("devoEditSlides");
+  const addDevoSlideBtn = document.getElementById("addDevoSlideBtn");
+  const saveDevotionalBtn = document.getElementById("saveDevotionalBtn");
+  const cancelEditDevotionalBtn = document.getElementById("cancelEditDevotionalBtn");
+  const deleteDevotionalBtn = document.getElementById("deleteDevotionalBtn");
+  const devoEditStatusEl = document.getElementById("devoEditStatus");
+
+  let devotionalsIndex = [];
+  let devotionalsLoaded = false;
+  let currentDevotional = null; // full devotional object { id, title, slides }
+  let currentDevoSlideIndex = -1;
+  let currentDevoIsLive = false; // whether the currently-selected slide is actually live (vs. staged)
+
+  function devoContentForSlide(devotional, slideIdx) {
+    const slide = devotional.slides[slideIdx];
+    return { title: devotional.title, slideLabel: `${slideIdx + 1}/${devotional.slides.length}`, lines: slide.lines };
+  }
+
+  async function ensureDevotionalsLoaded() {
+    if (devotionalsLoaded) return;
+    try {
+      const res = await fetch("/api/devotionals");
+      devotionalsIndex = await res.json();
+      devotionalsLoaded = true;
+      renderDevotionalList(devotionalSearchEl.value);
+    } catch {
+      devotionalsIndex = [];
+    }
+  }
+
+  function renderDevotionalList(filter) {
+    const q = (filter || "").trim().toLowerCase();
+    const matches = q ? devotionalsIndex.filter((d) => d.title.toLowerCase().includes(q)) : devotionalsIndex;
+    devotionalListEl.innerHTML = "";
+    if (matches.length === 0) {
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = devotionalsIndex.length ? "No matches" : "No devotionals saved yet";
+      devotionalListEl.appendChild(hint);
+      return;
+    }
+    matches.forEach((d) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "result-item";
+      item.textContent = d.title;
+      item.addEventListener("click", () => openDevotional(d.id));
+      devotionalListEl.appendChild(item);
+    });
+  }
+
+  devotionalSearchEl.addEventListener("input", () => renderDevotionalList(devotionalSearchEl.value));
+
+  // Creates a blank devotional on the server, then jumps straight into its
+  // editor (title pre-selected) - same flow as "+ New song".
+  document.getElementById("newDevotionalBtn").addEventListener("click", async function () {
+    this.disabled = true;
+    try {
+      const res = await fetch("/api/devotionals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New Devotional" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "create failed");
+      const devotional = await res.json();
+      devotionalsLoaded = false;
+      await ensureDevotionalsLoaded();
+      await openDevotional(devotional.id, { silent: true });
+      openDevotionalEditor();
+      devoEditTitleInput.focus();
+      devoEditTitleInput.select();
+    } catch (err) {
+      alert(`Could not create devotional: ${err.message}`);
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  async function openDevotional(id, opts) {
+    const silent = opts && opts.silent;
+    try {
+      const res = await fetch(`/api/devotionals/${encodeURIComponent(id)}`);
+      if (!res.ok) return;
+      currentDevotional = await res.json();
+    } catch {
+      return;
+    }
+    currentDevoSlideIndex = -1;
+    currentDevoIsLive = false;
+    if (editingDevoSlides) closeDevotionalEditor();
+    devotionalsIndexViewEl.hidden = true;
+    devotionalDetailViewEl.hidden = false;
+    devotionalDetailTitleEl.textContent = currentDevotional.title;
+    renderDevoSlideList();
+    if (!silent && currentDevotional.slides.length > 0) selectDevoSlide(0);
+  }
+
+  document.getElementById("backToDevotionalsBtn").addEventListener("click", () => {
+    if (editingDevoSlides) closeDevotionalEditor();
+    devotionalDetailViewEl.hidden = true;
+    devotionalsIndexViewEl.hidden = false;
+  });
+
+  function renderDevoSlideList() {
+    devoSlideListEl.innerHTML = "";
+    let activeItem = null;
+    (currentDevotional.slides || []).forEach((slide, idx) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      const isActive = idx === currentDevoSlideIndex;
+      item.className = "result-item slide-item" + (isActive ? " active" : "");
+      item.innerHTML = `<div class="slide-label">${escapeHtml(slide.label)}</div><div class="slide-lines">${escapeHtml(slide.lines.join("\n"))}</div>`;
+      item.addEventListener("click", () => selectDevoSlide(idx));
+      devoSlideListEl.appendChild(item);
+      if (isActive) activeItem = item;
+    });
+    updateDevoSlideNavLabel();
+    scrollActiveIntoView(activeItem);
+  }
+
+  function updateDevoSlideNavLabel() {
+    if (!currentDevotional || currentDevoSlideIndex < 0) {
+      currentDevoSlideLabelEl.textContent = "";
+      return;
+    }
+    const slide = currentDevotional.slides[currentDevoSlideIndex];
+    if (!slide) {
+      currentDevoSlideLabelEl.textContent = "";
+      return;
+    }
+    currentDevoSlideLabelEl.textContent = `${currentDevoSlideIndex + 1}/${currentDevotional.slides.length} — ${slide.label}`;
+  }
+
+  function selectDevoSlide(idx) {
+    if (!currentDevotional || idx < 0 || idx >= currentDevotional.slides.length) return;
+    currentDevoSlideIndex = idx;
+    const content = devoContentForSlide(currentDevotional, idx);
+    if (currentDevoIsLive) sendUpdate("devotional", content);
+    else stage("devotional", content);
+    renderDevoSlideList();
+  }
+
+  function stepDevoSlide(delta) {
+    if (!currentDevotional) return;
+    const targetIdx = currentDevoSlideIndex + delta;
+    if (targetIdx < 0 || targetIdx >= currentDevotional.slides.length) return;
+    selectDevoSlide(targetIdx);
+  }
+
+  prevDevoSlideBtn.addEventListener("click", () => stepDevoSlide(-1));
+  nextDevoSlideBtn.addEventListener("click", () => stepDevoSlide(1));
+
+  // ---- Devotional editor - rename, edit/add/delete/reorder slides, delete
+  // the whole devotional, or paste a whole devotional to auto-split into
+  // slides. Edits a working copy (editingDevoSlides) so nothing is written
+  // to disk until "Save changes" is explicitly clicked - same pattern as
+  // the song editor above (see openSongEditor). ----
+
+  let editingDevoSlides = null; // [{ label, lines: string[] }, ...] while editing, else null
+
+  function openDevotionalEditor() {
+    if (!currentDevotional) return;
+    editingDevoSlides = currentDevotional.slides.map((s) => ({ label: s.label, lines: [...s.lines] }));
+    devoEditTitleInput.value = currentDevotional.title;
+    devoEditPasteTextEl.value = "";
+    devoEditStatusEl.textContent = "";
+    renderDevoEditSlides();
+    devoSlideListEl.hidden = true;
+    devoSlideNavEl.hidden = true;
+    devoEditPanelEl.hidden = false;
+  }
+
+  function closeDevotionalEditor() {
+    editingDevoSlides = null;
+    devoEditPanelEl.hidden = true;
+    devoSlideListEl.hidden = false;
+    devoSlideNavEl.hidden = false;
+  }
+
+  function syncEditingDevoSlidesFromDom() {
+    if (!editingDevoSlides) return;
+    devoEditSlidesEl.querySelectorAll(".song-edit-slide").forEach((row, idx) => {
+      if (!editingDevoSlides[idx]) return;
+      editingDevoSlides[idx].label = row.querySelector(".song-edit-slide-label").value;
+      editingDevoSlides[idx].lines = row.querySelector(".song-edit-slide-lines").value.split("\n");
+    });
+  }
+
+  function renderDevoEditSlides() {
+    devoEditSlidesEl.innerHTML = "";
+    editingDevoSlides.forEach((slide, idx) => {
+      const row = document.createElement("div");
+      row.className = "song-edit-slide";
+      row.innerHTML = `
+        <div class="song-edit-slide-head">
+          <input class="song-edit-slide-label" type="text" value="${escapeHtml(slide.label)}" placeholder="Slide label" />
+          <div class="song-edit-slide-actions">
+            <button type="button" class="move-up-btn" title="Move up" ${idx === 0 ? "disabled" : ""}>&#9650;</button>
+            <button type="button" class="move-down-btn" title="Move down" ${idx === editingDevoSlides.length - 1 ? "disabled" : ""}>&#9660;</button>
+            <button type="button" class="delete-slide-btn" title="Delete slide">&#10005;</button>
+          </div>
+        </div>
+        <textarea class="song-edit-slide-lines" rows="4" placeholder="One line per row">${escapeHtml(slide.lines.join("\n"))}</textarea>`;
+      row.querySelector(".move-up-btn").addEventListener("click", () => {
+        syncEditingDevoSlidesFromDom();
+        if (idx > 0) [editingDevoSlides[idx - 1], editingDevoSlides[idx]] = [editingDevoSlides[idx], editingDevoSlides[idx - 1]];
+        renderDevoEditSlides();
+      });
+      row.querySelector(".move-down-btn").addEventListener("click", () => {
+        syncEditingDevoSlidesFromDom();
+        if (idx < editingDevoSlides.length - 1) [editingDevoSlides[idx + 1], editingDevoSlides[idx]] = [editingDevoSlides[idx], editingDevoSlides[idx + 1]];
+        renderDevoEditSlides();
+      });
+      row.querySelector(".delete-slide-btn").addEventListener("click", () => {
+        syncEditingDevoSlidesFromDom();
+        editingDevoSlides.splice(idx, 1);
+        renderDevoEditSlides();
+      });
+      devoEditSlidesEl.appendChild(row);
+    });
+  }
+
+  editDevotionalBtn.addEventListener("click", openDevotionalEditor);
+  cancelEditDevotionalBtn.addEventListener("click", closeDevotionalEditor);
+
+  addDevoSlideBtn.addEventListener("click", () => {
+    syncEditingDevoSlidesFromDom();
+    editingDevoSlides.push({ label: `Slide ${editingDevoSlides.length + 1}`, lines: [""] });
+    renderDevoEditSlides();
+  });
+
+  // Splits pasted text into slides the moment it's pasted - one slide per
+  // blank-line-separated paragraph (reuses the exact same convention/
+  // function the song editor's "Split into slides" button uses), no extra
+  // button click needed. Runs on the next tick so the textarea's value has
+  // actually been updated by the paste before reading it.
+  devoEditPasteTextEl.addEventListener("paste", () => {
+    setTimeout(() => {
+      const text = devoEditPasteTextEl.value;
+      if (!text.trim()) return;
+      const slides = splitPastedLyricsIntoSlides(text);
+      if (slides.length === 0) return;
+      syncEditingDevoSlidesFromDom();
+      const hasExistingContent = editingDevoSlides.some((s) => s.lines.some((l) => l.trim()));
+      if (hasExistingContent && !confirm("Replace the current slides with the pasted text, split into slides?")) return;
+      editingDevoSlides = slides;
+      devoEditPasteTextEl.value = "";
+      renderDevoEditSlides();
+    }, 0);
+  });
+
+  saveDevotionalBtn.addEventListener("click", async () => {
+    syncEditingDevoSlidesFromDom();
+    const title = devoEditTitleInput.value.trim();
+    if (!title) {
+      devoEditStatusEl.textContent = "Title can't be empty.";
+      return;
+    }
+    const slides = editingDevoSlides
+      .map((s) => {
+        const lines = s.lines.map((l) => l.trim());
+        while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+        return { label: s.label.trim() || "Untitled", lines };
+      })
+      .filter((s) => s.lines.some((l) => l));
+    saveDevotionalBtn.disabled = true;
+    devoEditStatusEl.textContent = "Saving…";
+    try {
+      const res = await fetch(`/api/devotionals/${encodeURIComponent(currentDevotional.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, slides }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "save failed");
+      currentDevotional = await res.json();
+      devotionalsLoaded = false; // force a refresh so the list picks up a renamed title
+      await ensureDevotionalsLoaded();
+      devotionalDetailTitleEl.textContent = currentDevotional.title;
+      currentDevoSlideIndex = -1;
+      currentDevoIsLive = false;
+      closeDevotionalEditor();
+      renderDevoSlideList();
+      devoEditStatusEl.textContent = "";
+    } catch (err) {
+      devoEditStatusEl.textContent = `Could not save: ${err.message}`;
+    } finally {
+      saveDevotionalBtn.disabled = false;
+    }
+  });
+
+  deleteDevotionalBtn.addEventListener("click", async () => {
+    if (!currentDevotional) return;
+    if (!confirm(`Delete "${currentDevotional.title}"? This can't be undone.`)) return;
+    deleteDevotionalBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/devotionals/${encodeURIComponent(currentDevotional.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "delete failed");
+      devotionalsLoaded = false;
+      await ensureDevotionalsLoaded();
+      currentDevotional = null;
+      currentDevoSlideIndex = -1;
+      currentDevoIsLive = false;
+      closeDevotionalEditor();
+      devotionalDetailViewEl.hidden = true;
+      devotionalsIndexViewEl.hidden = false;
+    } catch (err) {
+      alert(`Could not delete: ${err.message}`);
+    } finally {
+      deleteDevotionalBtn.disabled = false;
     }
   });
 })();

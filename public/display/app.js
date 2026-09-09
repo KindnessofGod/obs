@@ -77,6 +77,23 @@
       );
     }
 
+    if (slideType === "devotional") {
+      // Full-screen daily devotional (Rhapsody of Realities, Teevo, etc.) -
+      // unlike every other slide type this isn't a lower-third bar, it's
+      // meant to cover the whole screen with its text centered on both axes
+      // by default (see DEVOTIONAL_LAYOUT_DEFAULTS in control/app.js), while
+      // still using the exact same resizable/draggable box machinery as
+      // every other slide type.
+      var devoLines = Array.isArray(content.lines) ? content.lines : [];
+      var devoLinesHtml = devoLines.map(function (l) { return "<div>" + escapeHtml(l) + "</div>"; }).join("");
+      return (
+        '<div class="slide slide-devotional">' +
+        (content.title ? '<div class="devotional-title">' + escapeHtml(content.title) + "</div>" : "") +
+        '<div class="devotional-lines">' + devoLinesHtml + "</div>" +
+        "</div>"
+      );
+    }
+
     if (slideType === "announcement") {
       return (
         '<div class="slide slide-announcement">' +
@@ -188,7 +205,18 @@
   // painted, and again whenever either layout itself changes so a mid-song
   // adjustment still lands correctly on whichever one is showing.
   var currentLayout = {};
+  var currentLyricLayout = {};
   var currentTitleCardLayout = {};
+  var currentDevotionalLayout = {};
+
+  // Which layout object governs a given slideType's bg/text box - shared by
+  // applyActiveLayout and the preview drag-to-position handler below.
+  function layoutForSlideType(slideType) {
+    if (slideType === "lyric") return { layout: currentLyricLayout, key: "lyricLayout" };
+    if (slideType === "songtitle") return { layout: currentTitleCardLayout, key: "titleCardLayout" };
+    if (slideType === "devotional") return { layout: currentDevotionalLayout, key: "devotionalLayout" };
+    return { layout: currentLayout, key: "layout" };
+  }
 
   // Applies operator-configured dimension/style overrides for whichever
   // layout applies to `slideType`. Any field left null/undefined falls back
@@ -199,7 +227,7 @@
   // type's own CSS defaults when unset, rather than forcing every slide to
   // look the same.
   function applyActiveLayout(slideType) {
-    var layout = (slideType === "songtitle" ? currentTitleCardLayout : currentLayout) || {};
+    var layout = layoutForSlideType(slideType).layout || {};
     var root = document.documentElement.style;
 
     root.setProperty("--bg-width", (typeof layout.bgWidthPct === "number" ? layout.bgWidthPct : 100) + "vw");
@@ -291,6 +319,16 @@
 
   function applyTitleCardLayout(layout) {
     currentTitleCardLayout = layout || {};
+    applyActiveLayout(currentSlideType);
+  }
+
+  function applyLyricLayout(layout) {
+    currentLyricLayout = layout || {};
+    applyActiveLayout(currentSlideType);
+  }
+
+  function applyDevotionalLayout(layout) {
+    currentDevotionalLayout = layout || {};
     applyActiveLayout(currentSlideType);
   }
 
@@ -389,8 +427,10 @@
     // Sent on every fresh connection so a late-joining display re-syncs.
     applyTextScale(msg.textScale);
     applyLayout(msg.layout);
+    applyLyricLayout(msg.lyricLayout);
     applyTitleCardLayout(msg.titleCardLayout);
     applyTitleCardSubtitleLayout(msg.titleCardSubtitleLayout);
+    applyDevotionalLayout(msg.devotionalLayout);
     if (msg.visible && msg.current && msg.current.slideType) {
       currentSlideType = msg.current.slideType;
       showEntrance(msg.current.slideType, msg.current.content);
@@ -423,11 +463,17 @@
       case "layout":
         applyLayout(msg.layout);
         break;
+      case "lyricLayout":
+        applyLyricLayout(msg.layout);
+        break;
       case "titleCardLayout":
         applyTitleCardLayout(msg.layout);
         break;
       case "titleCardSubtitleLayout":
         applyTitleCardSubtitleLayout(msg.layout);
+        break;
+      case "devotionalLayout":
+        applyDevotionalLayout(msg.layout);
         break;
       default:
         console.warn("[display] unknown message type:", msg.type);
@@ -452,9 +498,9 @@
       if (boxKind === "subtitle") {
         return { layoutKey: "titleCardSubtitleLayout", layout: currentTitleCardSubtitleLayout, xField: "textOffsetXPct", yField: "textOffsetYPct" };
       }
-      var isTitleCard = currentSlideType === "songtitle";
-      var layout = isTitleCard ? currentTitleCardLayout : currentLayout;
-      var layoutKey = isTitleCard ? "titleCardLayout" : "layout";
+      var active = layoutForSlideType(currentSlideType);
+      var layout = active.layout;
+      var layoutKey = active.key;
       if (boxKind === "bg") return { layoutKey: layoutKey, layout: layout, xField: "bgOffsetXPct", yField: "bgOffsetYPct" };
       return { layoutKey: layoutKey, layout: layout, xField: "textOffsetXPct", yField: "textOffsetYPct" };
     }

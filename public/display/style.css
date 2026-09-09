@@ -234,23 +234,23 @@ body.is-preview .lt-subtitle.pv-dragging::before {
 }
 
 /* Lyric ----------------------------------------------------------------
-   Songs always center their lyrics (both axes) and keep the title/slide-
-   label pinned to the very bottom of the box, regardless of how many lines
-   are showing - deliberately NOT tied to the shared --content-justify/
-   --content-align-items vars that scripture uses, since those are an
-   operator-adjustable position for a single compact block, whereas here the
-   title must stay anchored at the bottom even while the lyric text itself
-   floats to vertical center (most noticeable with just one line: without
-   this, the whole block - lyrics AND title together - would drift up to
-   the middle, dragging the title away from the bottom with it). Filling
-   the full box lets .lyric-lines (flex: 1) claim all the leftover space
-   above the title for its own centering, independent of line count. */
+   Own independent layout (lyricLayout, separate from scripture/announcement's
+   shared `layout` - see layoutForSlideType in app.js) - font/boldness/size/
+   position are all operator-adjustable via --content-* vars, same mechanism
+   scripture uses. The one thing that's still NOT tied to the operator's
+   vertical-position choice is the title/slide-label, which always stays
+   pinned to the very bottom of the box regardless of how many lyric lines
+   are showing (most noticeable with just one line: without this, the whole
+   block - lyrics AND title together - would drift to wherever the operator
+   put it, dragging the title away from the bottom with it). Filling the
+   full box lets .lyric-lines (flex: 1) claim all the leftover space above
+   the title for its own positioning, independent of line count. */
 
 .slide-lyric {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
+  align-items: var(--content-align-items, center);
+  text-align: var(--content-text-align, center);
   height: 100%;
   width: 100%;
 }
@@ -259,8 +259,8 @@ body.is-preview .lt-subtitle.pv-dragging::before {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  justify-content: var(--content-justify, center);
+  align-items: var(--content-align-items, center);
   width: 100%;
   font-family: var(--content-font-family, inherit);
   font-size: calc(clamp(24px, 3.1vw, 48px) * var(--text-scale, 1) * var(--content-font-size-scale, 1));
@@ -305,6 +305,12 @@ body.is-preview .lt-subtitle.pv-dragging::before {
   text-transform: var(--content-text-transform, none);
   font-size: calc(clamp(28px, 3.6vw, 56px) * var(--text-scale, 1) * var(--content-font-size-scale, 1));
   line-height: 1.2;
+  /* Always one line, regardless of how long the title is or how big the
+     operator sets the text size - the title text box has a fixed width
+     (textWidthPct), but wrapping a long title to fit inside it is worse
+     than letting it overflow past the box's edges, which is what this
+     allows (the box itself doesn't clip its own content). */
+  white-space: nowrap;
 }
 
 .lt-subtitle {
@@ -331,6 +337,45 @@ body.is-preview .lt-subtitle.pv-dragging::before {
   text-transform: var(--subtitle-text-transform, uppercase);
   font-size: calc(clamp(14px, 1.5vw, 24px) * var(--text-scale, 1) * var(--subtitle-font-size-scale, 1));
   letter-spacing: 0.06em;
+}
+
+/* Devotional ----------------------------------------------------------------
+   Full-screen daily devotional (Rhapsody of Realities, Teevo, etc.) - unlike
+   every other slide type, its background/text boxes default to filling the
+   entire screen (see DEVOTIONAL_LAYOUT_DEFAULTS in control/app.js: bgWidthPct/
+   bgHeightPct/textWidthPct/textHeightPct all 100, textAlign "middle",
+   textHAlign "center") so the text centers on both axes over a full custom
+   graphic, rather than being pinned to the bottom-left like a lower third.
+   It reuses the exact same #lt-bg/#lt-content boxes and layout/drag/resize
+   machinery as every other slide - only the defaults differ. */
+
+.slide-devotional {
+  width: 100%;
+}
+
+.slide-devotional .devotional-title {
+  font-family: var(--content-font-family, -apple-system, "Segoe UI", Roboto, sans-serif);
+  font-weight: 800;
+  font-style: var(--content-font-style, normal);
+  text-transform: var(--content-text-transform, none);
+  font-size: calc(clamp(26px, 3vw, 48px) * var(--text-scale, 1));
+  color: #f4e2a1;
+  margin-bottom: 2.4vh;
+}
+
+.slide-devotional .devotional-lines {
+  font-family: var(--content-font-family, Georgia, "Times New Roman", serif);
+  font-weight: var(--content-font-weight, 400);
+  font-style: var(--content-font-style, normal);
+  text-transform: var(--content-text-transform, none);
+  font-size: calc(clamp(20px, 2.3vw, 38px) * var(--text-scale, 1) * var(--content-font-size-scale, 1));
+  line-height: 1.5;
+}
+
+/* A blank line in the pasted text is a deliberate paragraph break - render
+   it as vertical space rather than collapsing to nothing. */
+.slide-devotional .devotional-lines div:empty {
+  height: 0.7em;
 }
 
 /* Announcement ---------------------------------------------------------------- */

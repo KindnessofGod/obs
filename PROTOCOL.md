@@ -38,7 +38,7 @@ One shared endpoint: `ws://localhost:3210/ws`. Every `/display` and `/control` p
 { "type": "state", "visible": true, "current": { "slideType": "scripture", "content": { ... } }, "textScale": 1, "layout": { ... } }
 
 // Sent whenever the operator shows a new slide.
-{ "type": "show", "slideType": "scripture" | "lyric" | "announcement", "content": { ... } }
+{ "type": "show", "slideType": "scripture" | "lyric" | "announcement" | "songtitle" | "devotional", "content": { ... } }
 
 // Sent to update the currently-visible slide's content without a hide/show flicker
 // (e.g. "next verse", advancing a song to the next line block).
@@ -77,14 +77,23 @@ One shared endpoint: `ws://localhost:3210/ws`. Every `/display` and `/control` p
 
 // slideType: "announcement"
 { "title": "Potluck Next Sunday", "body": "Bring a dish to share after the second service." }
+
+// slideType: "songtitle" - automatic intro card shown before a song's first lyric slide
+{ "title": "Amazing Grace", "subtitle": "LoveWorld Singers" }
+
+// slideType: "devotional" - full-screen daily devotional (Rhapsody of Realities, Teevo,
+// etc.), centered both horizontally and vertically over its background by default
+{ "title": "Living By Divine Order", "lines": ["Today's Rhapsody...", "", "..."] }
 ```
+
+`layout` sizes/positions the shared scripture/announcement lower-third box. More independent layout keys exist, same shape, each its own box that never affects the others: `lyricLayout` (song lyrics - font/boldness/size/position, fully separate from scripture/announcements; centered by default, unlike `layout`'s bottom/left), `titleCardLayout` (the song title card above) + `titleCardSubtitleLayout` (its byline), and `devotionalLayout` (the full-screen devotional above - defaults to a background and text box that both fill the entire screen, text centered on both axes, rather than the lower-third defaults). Sent/broadcast the same way as `layout` (`{ "type": "lyricLayout", "layout": {...} }`, etc.), and included in the initial `state` message under their own keys.
 
 ### Client → server
 
 Only `/control` sends these; the server validates then re-broadcasts the corresponding `show`/`update`/`hide` message to everyone (including back to the sender, so all control windows/OBS docks stay in sync if more than one is open).
 
 ```jsonc
-{ "type": "show", "slideType": "scripture" | "lyric" | "announcement", "content": { ... } }
+{ "type": "show", "slideType": "scripture" | "lyric" | "announcement" | "songtitle" | "devotional", "content": { ... } }
 { "type": "update", "content": { ... } }
 { "type": "hide" }
 { "type": "textScale", "scale": 1.2 }

@@ -35,6 +35,7 @@
     <button class="tab-btn" data-tab="songs">Songs</button>
     <button class="tab-btn" data-tab="setlist">Setlist</button>
     <button class="tab-btn" data-tab="announcements">Announcements</button>
+    <button class="tab-btn" data-tab="devotional">Devotional</button>
     <button class="tab-btn" data-tab="preview">Preview</button>
   </nav>
 
@@ -189,6 +190,68 @@
     </details>
   </section>
 
+  <!-- ===================== DEVOTIONAL ===================== -->
+  <section id="tab-devotional" class="tab-panel">
+
+    <div id="devotionalsIndexView">
+      <div class="scripture-sticky-header">
+        <div class="song-search-row">
+          <input id="devotionalSearch" type="text" placeholder="Search saved devotionals…" autocomplete="off" />
+          <button id="newDevotionalBtn" type="button" title="Create a new devotional">+ New</button>
+        </div>
+        <div class="bg-picker">
+          <label for="devotionalBgSelect">Background</label>
+          <select id="devotionalBgSelect"></select>
+        </div>
+      </div>
+      <div id="devotionalList" class="results-list scrollable-results"></div>
+    </div>
+
+    <div id="devotionalDetailView" hidden>
+      <div class="scripture-sticky-header">
+        <div class="song-detail-header">
+          <button id="backToDevotionalsBtn" title="Back to saved devotionals">&#8592;</button>
+          <h3 id="devotionalDetailTitle"></h3>
+          <button id="editDevotionalBtn" title="Edit this devotional's title and slides">Edit</button>
+        </div>
+        <div id="devoSlideNav" class="nav-controls">
+          <button id="prevDevoSlideBtn">&#9664; Prev</button>
+          <span id="currentDevoSlideLabel" class="nav-label"></span>
+          <button id="nextDevoSlideBtn">Next &#9654;</button>
+        </div>
+      </div>
+      <div id="devoSlideList" class="results-list scrollable-results"></div>
+
+      <div id="devoEditPanel" class="song-edit-panel scrollable-results" hidden>
+        <label class="song-edit-title-row">
+          <span>Title</span>
+          <input id="devoEditTitleInput" type="text" />
+        </label>
+        <div class="song-edit-paste-row">
+          <label for="devoEditPasteText">Paste the full devotional (leave a blank line between paragraphs/sections — splits into slides automatically the moment you paste)</label>
+          <textarea id="devoEditPasteText" rows="6" placeholder="Paste today's Rhapsody of Realities / Teevo text here…"></textarea>
+        </div>
+        <div id="devoEditSlides" class="song-edit-slides"></div>
+        <div class="btn-row">
+          <button id="addDevoSlideBtn" type="button">+ Add slide</button>
+        </div>
+        <div class="btn-row">
+          <button id="saveDevotionalBtn" class="primary-btn" type="button">Save changes</button>
+          <button id="cancelEditDevotionalBtn" type="button">Cancel</button>
+        </div>
+        <button id="deleteDevotionalBtn" type="button" class="danger-btn">Delete this devotional</button>
+        <div id="devoEditStatus" class="save-status"></div>
+      </div>
+    </div>
+
+    <p class="preview-hint">
+      Full-screen, centered both horizontally and vertically over the chosen
+      background — sized and positioned in the Preview tab, so you can
+      shrink/move the text box to fit whatever background graphic you're
+      using (Rhapsody of Realities, Teevo, etc.).
+    </p>
+  </section>
+
   <!-- ===================== PREVIEW ===================== -->
   <section id="tab-preview" class="tab-panel">
     <div class="preview-frame-wrap">
@@ -203,6 +266,7 @@
       thing, for fine-tuning without a mouse.
     </p>
 
+    <h3 class="layout-controls-heading">Scripture &amp; announcements — background &amp; text</h3>
     <div class="layout-controls">
       <div class="layout-group">
         <div class="layout-group-title">Background size</div>
@@ -289,6 +353,120 @@
       </div>
 
       <button id="layoutResetBtn" type="button">Reset to defaults</button>
+    </div>
+
+    <h3 class="layout-controls-heading">Song lyrics — background &amp; text</h3>
+    <p class="preview-hint">
+      Fully independent from scripture/announcements above — font, boldness,
+      size, and position for the actual sung lines, adjustable without
+      touching anything else. The song title/slide-label always stays
+      pinned to the bottom of the box no matter what vertical position you
+      pick here (see the lyric slide itself for that).
+    </p>
+
+    <div class="layout-controls">
+      <div class="layout-group">
+        <div class="layout-group-title">Background size &amp; position</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="lyrBgWidthRange" min="20" max="150" step="1" />
+          <span class="layout-value" id="lyrBgWidthValue">100%</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="lyrBgHeightAutoCheckbox" checked />
+          <span>Auto height (match the image's real shape)</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="lyrBgHeightRange" min="5" max="80" step="1" disabled />
+          <span class="layout-value" id="lyrBgHeightValue">auto</span>
+        </label>
+        <div class="layout-row layout-row-offset">
+          <span>Position</span>
+          <div class="position-pad" id="lyrBgOffsetPad" tabindex="0">
+            <span class="position-pad-readout">X <b id="lyrBgOffsetXValue">0%</b> &nbsp; Y <b id="lyrBgOffsetYValue">0%</b></span>
+            <span class="position-pad-hint">click, then arrow keys (Shift = faster)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text area size &amp; position</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="lyrTextWidthRange" min="20" max="100" step="1" />
+          <span class="layout-value" id="lyrTextWidthValue">88%</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="lyrTextHeightRange" min="5" max="80" step="1" />
+          <span class="layout-value" id="lyrTextHeightValue">28%</span>
+        </label>
+        <div class="layout-row layout-row-offset">
+          <span>Position</span>
+          <div class="position-pad" id="lyrTextOffsetPad" tabindex="0">
+            <span class="position-pad-readout">X <b id="lyrTextOffsetXValue">0%</b> &nbsp; Y <b id="lyrTextOffsetYValue">0%</b></span>
+            <span class="position-pad-hint">click, then arrow keys (Shift = faster)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text style</div>
+        <label class="layout-row">
+          <span>Text size</span>
+          <input type="range" id="lyrFontSizeRange" min="50" max="250" step="5" />
+          <span class="layout-value" id="lyrFontSizeValue">100%</span>
+        </label>
+        <label class="layout-row">
+          <span>Vertical position</span>
+          <select id="lyrTextAlignSelect">
+            <option value="top">Top</option>
+            <option value="middle">Middle</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Horizontal position</span>
+          <select id="lyrTextHAlignSelect">
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Font</span>
+          <select id="lyrFontFamilySelect">
+            <option value="arial">Arial</option>
+            <option value="default">Default (per slide type)</option>
+            <option value="serif">Serif</option>
+            <option value="sans">Sans-serif</option>
+            <option value="condensed">Condensed</option>
+            <option value="rounded">Rounded</option>
+          </select>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="lyrBoldCheckbox" />
+          <span>Bold</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="lyrItalicCheckbox" />
+          <span>Italic</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="lyrAllCapsCheckbox" />
+          <span>ALL CAPS</span>
+        </label>
+        <label class="layout-row">
+          <span>Color</span>
+          <input type="color" id="lyrColorInput" />
+        </label>
+      </div>
+
+      <div class="layout-controls-actions">
+        <button id="lyrLayoutResetBtn" type="button">Reset to defaults</button>
+        <button id="lyrSaveDefaultBtn" type="button">Save current as default</button>
+      </div>
     </div>
 
     <h3 class="layout-controls-heading">Song title card — background &amp; title text</h3>
@@ -491,6 +669,119 @@
       <div class="layout-controls-actions">
         <button id="tcSubLayoutResetBtn" type="button">Reset to defaults</button>
         <button id="tcSubSaveDefaultBtn" type="button">Save current as default</button>
+      </div>
+    </div>
+
+    <h3 class="layout-controls-heading">Devotional — background &amp; text</h3>
+    <p class="preview-hint">
+      Full-screen slide (Rhapsody of Realities, Teevo, etc.) — the background
+      defaults to filling the entire screen and the text box defaults to
+      centered both ways. Shrink/move either one to fit your own background
+      graphic, then click "Save current as default" to keep it for next time.
+    </p>
+
+    <div class="layout-controls">
+      <div class="layout-group">
+        <div class="layout-group-title">Background size &amp; position</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="devoBgWidthRange" min="20" max="150" step="1" />
+          <span class="layout-value" id="devoBgWidthValue">100%</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="devoBgHeightAutoCheckbox" />
+          <span>Auto height (match the image's real shape)</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="devoBgHeightRange" min="5" max="200" step="1" />
+          <span class="layout-value" id="devoBgHeightValue">100%</span>
+        </label>
+        <div class="layout-row layout-row-offset">
+          <span>Position</span>
+          <div class="position-pad" id="devoBgOffsetPad" tabindex="0">
+            <span class="position-pad-readout">X <b id="devoBgOffsetXValue">0%</b> &nbsp; Y <b id="devoBgOffsetYValue">0%</b></span>
+            <span class="position-pad-hint">click, then arrow keys (Shift = faster)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text area size &amp; position</div>
+        <label class="layout-row">
+          <span>Width</span>
+          <input type="range" id="devoTextWidthRange" min="20" max="100" step="1" />
+          <span class="layout-value" id="devoTextWidthValue">100%</span>
+        </label>
+        <label class="layout-row">
+          <span>Height</span>
+          <input type="range" id="devoTextHeightRange" min="5" max="100" step="1" />
+          <span class="layout-value" id="devoTextHeightValue">100%</span>
+        </label>
+        <div class="layout-row layout-row-offset">
+          <span>Position</span>
+          <div class="position-pad" id="devoTextOffsetPad" tabindex="0">
+            <span class="position-pad-readout">X <b id="devoTextOffsetXValue">0%</b> &nbsp; Y <b id="devoTextOffsetYValue">0%</b></span>
+            <span class="position-pad-hint">click, then arrow keys (Shift = faster)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layout-group">
+        <div class="layout-group-title">Text style</div>
+        <label class="layout-row">
+          <span>Text size</span>
+          <input type="range" id="devoFontSizeRange" min="50" max="250" step="5" />
+          <span class="layout-value" id="devoFontSizeValue">100%</span>
+        </label>
+        <label class="layout-row">
+          <span>Vertical position</span>
+          <select id="devoTextAlignSelect">
+            <option value="top">Top</option>
+            <option value="middle">Middle</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Horizontal position</span>
+          <select id="devoTextHAlignSelect">
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+        <label class="layout-row">
+          <span>Font</span>
+          <select id="devoFontFamilySelect">
+            <option value="arial">Arial</option>
+            <option value="default">Default (per slide type)</option>
+            <option value="serif">Serif</option>
+            <option value="sans">Sans-serif</option>
+            <option value="condensed">Condensed</option>
+            <option value="rounded">Rounded</option>
+          </select>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="devoBoldCheckbox" />
+          <span>Bold</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="devoItalicCheckbox" />
+          <span>Italic</span>
+        </label>
+        <label class="layout-row layout-checkbox">
+          <input type="checkbox" id="devoAllCapsCheckbox" />
+          <span>ALL CAPS</span>
+        </label>
+        <label class="layout-row">
+          <span>Color</span>
+          <input type="color" id="devoColorInput" />
+        </label>
+      </div>
+
+      <div class="layout-controls-actions">
+        <button id="devoLayoutResetBtn" type="button">Reset to defaults</button>
+        <button id="devoSaveDefaultBtn" type="button">Save current as default</button>
       </div>
     </div>
   </section>

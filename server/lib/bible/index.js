@@ -197,6 +197,87 @@ function searchOffline(query, translationIds) {
   return searchByKeyword(trimmed, translations);
 }
 
+function isLicensedTranslation(translationId) {
+  return LICENSED_IDS.has(translationId);
+}
+
+// ---- searchLicensed ----
+//
+// The search box's results list previously came back empty for every
+// licensed translation (ESV/NLT/NIV/AMP) no matter what was typed - even a
+// plain reference like "jn 3:16" - because searchOffline only ever looks in
+// the in-memory `offline` map, which licensed translations were never part
+// of. This mirrors searchOffline's *reference* handling (single verse,
+// range, whole chapter, or a bare unambiguous book name) but fetches live
+// instead of reading from memory. There is no offline text to keyword-search
+// against for these, so a non-reference query still returns no results -
+// that part isn't a bug, just an inherent limit of API-backed translations.
+const MAX_CHAPTER_VERSES = 180; // Psalm 119 (176) plus headroom, as a fetch cap.
+
+async function searchLicensed(query, translationId) {
+  const trimmed = String(query || "").trim();
+  if (!trimmed || !isLicensedTranslation(translationId)) return [];
+
+  let book, chapter, verse, verseEnd;
+  const reference = parseReference(trimmed);
+  if (reference) {
+    ({ book, chapter, verse, verseEnd } = reference);
+  } else {
+    const bareBook = resolveUniqueBookPrefix(trimmed);
+    if (!bareBook) return []; // no offline text here to fall back to a keyword search over
+    book = bareBook;
+    chapter = 1;
+    verse = null;
+  }
+
+  // NLT can fetch a whole passage/chapter in one request - far friendlier to
+  // its per-day rate limit than fetching verse-by-verse. Other backends
+  // (ESV/API.Bible) don't have that wired up yet, so they fall back to
+  // looping getVerse per verse below.
+  if (translationId === "nlt" && verse === null) {
+    try {
+      const verses = await nlt.fetchPassage(book, chapter, null, null, secrets.nltApiKey);
+      return verses.map((v) => ({ translation: translationId, ...v }));
+    } catch {
+      return [];
+    }
+  }
+  if (translationId === "nlt") {
+    try {
+      const verses = await nlt.fetchPassage(book, chapter, verse, verseEnd, secrets.nltApiKey);
+      return verses.map((v) => ({ translation: translationId, ...v }));
+    } catch {
+      return [];
+    }
+  }
+
+  const results = [];
+  if (verse === null) {
+    for (let v = 1; v <= MAX_CHAPTER_VERSES; v++) {
+      let r;
+      try {
+        r = await getVerse(translationId, book, chapter, v);
+      } catch {
+        break; // upstream error - stop rather than hammering a failing API
+      }
+      if (!r) break; // past the end of the chapter
+      results.push(r);
+    }
+  } else {
+    const end = verseEnd || verse;
+    for (let v = verse; v <= end; v++) {
+      let r;
+      try {
+        r = await getVerse(translationId, book, chapter, v);
+      } catch {
+        break;
+      }
+      if (r) results.push(r);
+    }
+  }
+  return results;
+}
+
 function searchByReference(reference, translations) {
   const { book, chapter, verse, verseEnd } = reference;
   const results = [];
@@ -325,4 +406,12 @@ async function getVerse(translationId, book, chapter, verse) {
   return null;
 }
 
-module.exports = { init, listTranslations, searchOffline, getVerse, resolveUniqueBookPrefix };
+module.exports = {
+  init,
+  listTranslations,
+  searchOffline,
+  searchLicensed,
+  isLicensedTranslation,
+  getVerse,
+  resolveUniqueBookPrefix,
+};
