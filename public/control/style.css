@@ -724,11 +724,26 @@ input[type="text"]:focus, textarea:focus {
   padding: 8px;
   background: var(--bg-alt);
 }
+.song-edit-slide.dragging {
+  opacity: 0.4;
+}
+.song-edit-slide.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 .song-edit-slide-head {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+}
+.drag-handle {
+  flex: none;
+  cursor: grab;
+  color: var(--text-dim);
+  letter-spacing: -3px;
+  padding: 0 2px;
+  user-select: none;
 }
 .song-edit-slide-head input {
   flex: 1;

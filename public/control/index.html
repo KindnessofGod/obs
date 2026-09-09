@@ -213,6 +213,7 @@
           <button id="backToDevotionalsBtn" title="Back to saved devotionals">&#8592;</button>
           <h3 id="devotionalDetailTitle"></h3>
           <button id="editDevotionalBtn" title="Edit this devotional's title and slides">Edit</button>
+          <button id="deleteDevotionalBtn" type="button" class="danger-btn" title="Delete this devotional">Delete</button>
         </div>
         <div id="devoSlideNav" class="nav-controls">
           <button id="prevDevoSlideBtn">&#9664; Prev</button>
@@ -228,8 +229,11 @@
           <input id="devoEditTitleInput" type="text" />
         </label>
         <div class="song-edit-paste-row">
-          <label for="devoEditPasteText">Paste the full devotional (leave a blank line between paragraphs/sections — splits into slides automatically the moment you paste)</label>
+          <label for="devoEditPasteText">Paste the full devotional, clean it up if needed, then click "Split into slides" (up to 4 sentences per slide)</label>
           <textarea id="devoEditPasteText" rows="6" placeholder="Paste today's Rhapsody of Realities / Teevo text here…"></textarea>
+          <div class="btn-row">
+            <button id="splitDevoBtn" type="button">Split into slides</button>
+          </div>
         </div>
         <div id="devoEditSlides" class="song-edit-slides"></div>
         <div class="btn-row">
@@ -239,7 +243,6 @@
           <button id="saveDevotionalBtn" class="primary-btn" type="button">Save changes</button>
           <button id="cancelEditDevotionalBtn" type="button">Cancel</button>
         </div>
-        <button id="deleteDevotionalBtn" type="button" class="danger-btn">Delete this devotional</button>
         <div id="devoEditStatus" class="save-status"></div>
       </div>
     </div>

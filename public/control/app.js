@@ -2632,6 +2632,7 @@
   const devoEditPanelEl = document.getElementById("devoEditPanel");
   const devoEditTitleInput = document.getElementById("devoEditTitleInput");
   const devoEditPasteTextEl = document.getElementById("devoEditPasteText");
+  const splitDevoBtn = document.getElementById("splitDevoBtn");
   const devoEditSlidesEl = document.getElementById("devoEditSlides");
   const addDevoSlideBtn = document.getElementById("addDevoSlideBtn");
   const saveDevotionalBtn = document.getElementById("saveDevotionalBtn");
@@ -2825,16 +2826,18 @@
     editingDevoSlides.forEach((slide, idx) => {
       const row = document.createElement("div");
       row.className = "song-edit-slide";
+      row.draggable = true;
       row.innerHTML = `
         <div class="song-edit-slide-head">
-          <input class="song-edit-slide-label" type="text" value="${escapeHtml(slide.label)}" placeholder="Slide label" />
+          <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
+          <input class="song-edit-slide-label" type="text" draggable="false" value="${escapeHtml(slide.label)}" placeholder="Slide label" />
           <div class="song-edit-slide-actions">
             <button type="button" class="move-up-btn" title="Move up" ${idx === 0 ? "disabled" : ""}>&#9650;</button>
             <button type="button" class="move-down-btn" title="Move down" ${idx === editingDevoSlides.length - 1 ? "disabled" : ""}>&#9660;</button>
             <button type="button" class="delete-slide-btn" title="Delete slide">&#10005;</button>
           </div>
         </div>
-        <textarea class="song-edit-slide-lines" rows="4" placeholder="One line per row">${escapeHtml(slide.lines.join("\n"))}</textarea>`;
+        <textarea class="song-edit-slide-lines" draggable="false" rows="4" placeholder="One line per row">${escapeHtml(slide.lines.join("\n"))}</textarea>`;
       row.querySelector(".move-up-btn").addEventListener("click", () => {
         syncEditingDevoSlidesFromDom();
         if (idx > 0) [editingDevoSlides[idx - 1], editingDevoSlides[idx]] = [editingDevoSlides[idx], editingDevoSlides[idx - 1]];
@@ -2850,6 +2853,32 @@
         editingDevoSlides.splice(idx, 1);
         renderDevoEditSlides();
       });
+      // Drag-and-drop reordering - an alternative to the up/down buttons
+      // above, not a replacement (keyboard/precision use still works fine).
+      row.addEventListener("dragstart", (e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(idx));
+        row.classList.add("dragging");
+      });
+      row.addEventListener("dragend", () => {
+        devoEditSlidesEl.querySelectorAll(".song-edit-slide").forEach((r) => r.classList.remove("dragging", "drag-over"));
+      });
+      row.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        row.classList.add("drag-over");
+      });
+      row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+      row.addEventListener("drop", (e) => {
+        e.preventDefault();
+        row.classList.remove("drag-over");
+        const fromIdx = Number(e.dataTransfer.getData("text/plain"));
+        if (!Number.isFinite(fromIdx) || fromIdx === idx) return;
+        syncEditingDevoSlidesFromDom();
+        const [moved] = editingDevoSlides.splice(fromIdx, 1);
+        editingDevoSlides.splice(idx, 0, moved);
+        renderDevoEditSlides();
+      });
       devoEditSlidesEl.appendChild(row);
     });
   }
@@ -2863,24 +2892,45 @@
     renderDevoEditSlides();
   });
 
-  // Splits pasted text into slides the moment it's pasted - one slide per
-  // blank-line-separated paragraph (reuses the exact same convention/
-  // function the song editor's "Split into slides" button uses), no extra
-  // button click needed. Runs on the next tick so the textarea's value has
-  // actually been updated by the paste before reading it.
-  devoEditPasteTextEl.addEventListener("paste", () => {
-    setTimeout(() => {
-      const text = devoEditPasteTextEl.value;
-      if (!text.trim()) return;
-      const slides = splitPastedLyricsIntoSlides(text);
-      if (slides.length === 0) return;
-      syncEditingDevoSlidesFromDom();
-      const hasExistingContent = editingDevoSlides.some((s) => s.lines.some((l) => l.trim()));
-      if (hasExistingContent && !confirm("Replace the current slides with the pasted text, split into slides?")) return;
-      editingDevoSlides = slides;
-      devoEditPasteTextEl.value = "";
-      renderDevoEditSlides();
-    }, 0);
+  // Splits pasted text into slides of up to this many sentences each -
+  // deliberately sentence-based rather than the song editor's paragraph-
+  // based split, since a devotional's paragraphs are often too long for one
+  // full-screen slide to read comfortably. Only runs when the operator
+  // explicitly clicks "Split into slides" (not on paste itself), so there's
+  // room to clean up the pasted text first without it being immediately
+  // carved into slides out from under them.
+  const MAX_SENTENCES_PER_DEVO_SLIDE = 4;
+
+  function splitIntoSentences(text) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) return [];
+    // A sentence ends at ./!/? followed by whitespace or the end of the
+    // string - good enough for devotional prose; doesn't special-case
+    // abbreviations, but any misplaced break is trivially fixable by hand
+    // in the per-slide textareas afterward.
+    return (normalized.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || []).map((s) => s.trim()).filter(Boolean);
+  }
+
+  function splitDevotionalTextIntoSlides(text) {
+    const sentences = splitIntoSentences(text);
+    const slides = [];
+    for (let i = 0; i < sentences.length; i += MAX_SENTENCES_PER_DEVO_SLIDE) {
+      slides.push({ label: `Slide ${slides.length + 1}`, lines: sentences.slice(i, i + MAX_SENTENCES_PER_DEVO_SLIDE) });
+    }
+    return slides;
+  }
+
+  splitDevoBtn.addEventListener("click", () => {
+    const text = devoEditPasteTextEl.value;
+    if (!text.trim()) return;
+    const slides = splitDevotionalTextIntoSlides(text);
+    if (slides.length === 0) return;
+    syncEditingDevoSlidesFromDom();
+    const hasExistingContent = editingDevoSlides.some((s) => s.lines.some((l) => l.trim()));
+    if (hasExistingContent && !confirm("Replace the current slides with the pasted text, split into slides?")) return;
+    editingDevoSlides = slides;
+    devoEditPasteTextEl.value = "";
+    renderDevoEditSlides();
   });
 
   saveDevotionalBtn.addEventListener("click", async () => {

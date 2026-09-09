@@ -83,12 +83,13 @@
       // meant to cover the whole screen with its text centered on both axes
       // by default (see DEVOTIONAL_LAYOUT_DEFAULTS in control/app.js), while
       // still using the exact same resizable/draggable box machinery as
-      // every other slide type.
+      // every other slide type. content.title is intentionally never
+      // rendered here - it's operator-facing only (the live/staged banner
+      // and slide list in control/app.js), not part of the projection.
       var devoLines = Array.isArray(content.lines) ? content.lines : [];
       var devoLinesHtml = devoLines.map(function (l) { return "<div>" + escapeHtml(l) + "</div>"; }).join("");
       return (
         '<div class="slide slide-devotional">' +
-        (content.title ? '<div class="devotional-title">' + escapeHtml(content.title) + "</div>" : "") +
         '<div class="devotional-lines">' + devoLinesHtml + "</div>" +
         "</div>"
       );
