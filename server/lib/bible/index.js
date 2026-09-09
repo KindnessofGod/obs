@@ -2,8 +2,9 @@
 //
 // Bible data layer: offline public-domain translations (loaded once into
 // memory from data/bible/*.json) plus transparent fetch+cache for licensed
-// translations (ESV via esv.js, NIV/AMP via apibible.js). Implements exactly
-// the module contract in PROTOCOL.md's "Module contract: server/lib/bible".
+// translations (ESV via esv.js, NLT via nlt.js, NIV/AMP via apibible.js).
+// Implements exactly the module contract in PROTOCOL.md's "Module contract:
+// server/lib/bible".
 
 "use strict";
 
@@ -11,6 +12,7 @@ const fs = require("fs");
 const path = require("path");
 const { resolveBookAlias, resolveUniqueBookPrefix } = require("./books");
 const esv = require("./esv");
+const nlt = require("./nlt");
 const apibible = require("./apibible");
 
 const DATA_DIR = path.join(__dirname, "..", "..", "..", "data");
@@ -19,11 +21,14 @@ const SECRETS_FILE = path.join(DATA_DIR, "config", "secrets.json");
 
 // Licensed translations that don't have offline data. Listed unconditionally
 // (per PROTOCOL.md requirement) so /control can show them as options; getVerse
-// is what actually gates on an API key being configured, not this list.
+// is what actually gates on an API key being configured, not this list. NLT
+// is the one exception that works with no key at all - Tyndale's own terms
+// permit anonymous access (rate-limited) for non-commercial use.
 // TPT (The Passion Translation) intentionally has no entry here - there is no
 // known free public API for it, so it's simply absent rather than half-wired.
 const LICENSED_TRANSLATIONS = [
   { id: "esv", name: "English Standard Version", source: "esv", licensed: true },
+  { id: "nlt", name: "New Living Translation", source: "nlt", licensed: true },
   { id: "niv", name: "New International Version", source: "apibible", licensed: true },
   { id: "amp", name: "Amplified Bible", source: "apibible", licensed: true },
 ];
@@ -39,7 +44,7 @@ const MAX_LICENSED_CACHE_ENTRIES = 500;
 // ---- module state, populated by init() ----
 
 let offline = new Map(); // translationId -> { id, name, license, source, licensed, books, verseIndex }
-let secrets = {}; // { esvApiKey, apiBibleKey } if data/config/secrets.json exists
+let secrets = {}; // { esvApiKey, nltApiKey, apiBibleKey } if data/config/secrets.json exists
 let licensedCache = new Map(); // translationId -> Map(cacheKey -> verse result)
 
 function cacheKey(book, chapter, verse) {
@@ -304,6 +309,8 @@ async function getVerse(translationId, book, chapter, verse) {
     let fetched;
     if (translationId === "esv") {
       fetched = await esv.fetchVerse(canonicalBook, chapterNum, verseNum, secrets.esvApiKey);
+    } else if (translationId === "nlt") {
+      fetched = await nlt.fetchVerse(canonicalBook, chapterNum, verseNum, secrets.nltApiKey);
     } else {
       // niv, amp, and any future apibible-backed translation.
       fetched = await apibible.fetchVerse(canonicalBook, chapterNum, verseNum, secrets.apiBibleKey, translationId);
