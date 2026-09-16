@@ -80,7 +80,17 @@ function readSongIndex() {
     .filter((f) => f.endsWith(".json"))
     .map((f) => {
       const song = JSON.parse(fs.readFileSync(path.join(SONGS_DIR, f), "utf8"));
-      return { id: song.id, title: song.title };
+      // lyrics: a lowercased, flattened blob of every slide's lines, so the
+      // song list can be searched by lyric content ("i surrender all") and
+      // not just title - sent alongside title rather than added as a
+      // separate endpoint, since the song list is small enough that
+      // including it costs nothing and keeps search instant (no per-
+      // keystroke round trip).
+      const lyrics = (song.slides || [])
+        .flatMap((s) => s.lines || [])
+        .join(" ")
+        .toLowerCase();
+      return { id: song.id, title: song.title, lyrics };
     });
 }
 

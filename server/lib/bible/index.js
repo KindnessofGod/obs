@@ -156,7 +156,12 @@ function parseReference(query) {
   if (!match) return null;
 
   const [, bookToken, chapterStr, verseStr, verseEndStr] = match;
-  const book = resolveBookAlias(bookToken);
+  // Fall back to unambiguous-prefix matching (e.g. "jere" -> Jeremiah) when
+  // the token isn't one of the explicitly listed aliases - the same
+  // forgiving lookup a bare book name already gets via
+  // resolveUniqueBookPrefix, just applied here too so "jere 17" works
+  // exactly like "jeremiah 17" or "jer 17" already do.
+  const book = resolveBookAlias(bookToken) || resolveUniqueBookPrefix(bookToken);
   if (!book) return null;
 
   const chapter = Number(chapterStr);

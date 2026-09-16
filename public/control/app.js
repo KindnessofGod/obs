@@ -1451,7 +1451,15 @@
 
   // "Speed" search-as-you-type: the instant what's typed unambiguously names
   // a book (see resolveUniqueBookPrefix server-side), jump straight to its
-  // chapter 1 verse 1 - staged, not live, same as any other fresh selection.
+  // chapter 1 verse 1 - staged only, ALWAYS, regardless of the "Auto
+  // display" toggle. This is only ever a speculative guess fired mid-typing
+  // (e.g. dictating "Ps 71:21" briefly reads as just "Ps" the moment that
+  // book name becomes recognizable, well before the chapter/verse has been
+  // entered) - it must never touch the actual live projection, or every
+  // reference typed with Auto display on would flash to chapter 1 verse 1
+  // of the book before the real target verse is even finished being typed.
+  // Auto display's live-on-selection behavior is for deliberate Next/
+  // Previous stepping through an already-confirmed passage, not this.
   // Naturally stops firing once more of a real reference is typed (e.g.
   // "joshua 3"), since that no longer just names a bare book.
   async function maybeJumpToBook(bookName) {
@@ -1463,7 +1471,8 @@
       const parts = splitTextIntoParts(result.text);
       currentScripture = { translation: result.translation, book: result.book, chapter: result.chapter, verse: result.verse, parts, partIndex: 0 };
       const content = scriptureContentForPart(currentScripture, parts, 0);
-      currentScriptureIsLive = stageOrGoLive("scripture", content, scriptureAutoLive);
+      stage("scripture", content);
+      currentScriptureIsLive = false;
       renderScriptureNav(content);
     } catch {
       // network hiccup; leave whatever's staged untouched
@@ -1597,6 +1606,10 @@
       if (!currentSong || songDetailEl.hidden) return;
       e.preventDefault();
       stepSlide(e.key === "ArrowDown" ? 1 : -1);
+    } else if (document.getElementById("tab-devotional").classList.contains("active")) {
+      if (!currentDevotional || devotionalDetailViewEl.hidden) return;
+      e.preventDefault();
+      stepDevoSlide(e.key === "ArrowDown" ? 1 : -1);
     }
   });
 
@@ -1799,7 +1812,9 @@
 
   function renderSongList(filter) {
     const q = (filter || "").trim().toLowerCase();
-    const matches = q ? songsIndex.filter((s) => s.title.toLowerCase().includes(q)) : songsIndex;
+    const matches = q
+      ? songsIndex.filter((s) => s.title.toLowerCase().includes(q) || (s.lyrics || "").includes(q))
+      : songsIndex;
     songListEl.innerHTML = "";
     if (matches.length === 0) {
       const hint = document.createElement("div");
@@ -2821,6 +2836,20 @@
     });
   }
 
+  // While dragging a slide near the top/bottom edge of the scrollable tab
+  // panel, keep scrolling it in that direction - without this, reordering
+  // only ever worked within whatever was already visible on screen, since
+  // native drag-and-drop doesn't auto-scroll on its own.
+  function autoScrollDuringDrag(e) {
+    const container = document.getElementById("tab-devotional");
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const EDGE = 60;
+    const SPEED = 18;
+    if (e.clientY < rect.top + EDGE) container.scrollTop -= SPEED;
+    else if (e.clientY > rect.bottom - EDGE) container.scrollTop += SPEED;
+  }
+
   function renderDevoEditSlides() {
     devoEditSlidesEl.innerHTML = "";
     editingDevoSlides.forEach((slide, idx) => {
@@ -2834,6 +2863,7 @@
           <div class="song-edit-slide-actions">
             <button type="button" class="move-up-btn" title="Move up" ${idx === 0 ? "disabled" : ""}>&#9650;</button>
             <button type="button" class="move-down-btn" title="Move down" ${idx === editingDevoSlides.length - 1 ? "disabled" : ""}>&#9660;</button>
+            <button type="button" class="insert-slide-btn" title="Insert a new slide after this one">+</button>
             <button type="button" class="delete-slide-btn" title="Delete slide">&#10005;</button>
           </div>
         </div>
@@ -2841,6 +2871,11 @@
       row.querySelector(".move-up-btn").addEventListener("click", () => {
         syncEditingDevoSlidesFromDom();
         if (idx > 0) [editingDevoSlides[idx - 1], editingDevoSlides[idx]] = [editingDevoSlides[idx], editingDevoSlides[idx - 1]];
+        renderDevoEditSlides();
+      });
+      row.querySelector(".insert-slide-btn").addEventListener("click", () => {
+        syncEditingDevoSlidesFromDom();
+        editingDevoSlides.splice(idx + 1, 0, { label: `Slide ${idx + 2}`, lines: [""] });
         renderDevoEditSlides();
       });
       row.querySelector(".move-down-btn").addEventListener("click", () => {
@@ -2867,6 +2902,7 @@
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         row.classList.add("drag-over");
+        autoScrollDuringDrag(e);
       });
       row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
       row.addEventListener("drop", (e) => {
@@ -2883,6 +2919,15 @@
     });
   }
 
+  // Same auto-scroll as the per-row dragover handler, but on the whole
+  // panel too - otherwise dragging into a gap above the first slide or
+  // below the last one (no row directly under the cursor there) stopped
+  // scrolling even right at the edge.
+  devoEditPanelEl.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    autoScrollDuringDrag(e);
+  });
+
   editDevotionalBtn.addEventListener("click", openDevotionalEditor);
   cancelEditDevotionalBtn.addEventListener("click", closeDevotionalEditor);
 
@@ -2892,14 +2937,16 @@
     renderDevoEditSlides();
   });
 
-  // Splits pasted text into slides of up to this many sentences each -
-  // deliberately sentence-based rather than the song editor's paragraph-
-  // based split, since a devotional's paragraphs are often too long for one
-  // full-screen slide to read comfortably. Only runs when the operator
-  // explicitly clicks "Split into slides" (not on paste itself), so there's
-  // room to clean up the pasted text first without it being immediately
-  // carved into slides out from under them.
-  const MAX_SENTENCES_PER_DEVO_SLIDE = 4;
+  // Splits pasted text into slides by word count rather than a fixed
+  // sentence count - a "4 sentences" rule produced very uneven slides
+  // (some sentences are five words, others fifty), whereas packing whole
+  // sentences in until a word budget is hit gives more evenly-sized,
+  // comfortable-to-read slides. Still only ever breaks *between* sentences,
+  // never mid-sentence - same principle as every other slide-splitting
+  // logic in this app (see splitLinesIntoParts above). Only runs when the
+  // operator explicitly clicks "Split into slides" (not on paste itself),
+  // so there's room to clean up the pasted text first.
+  const MAX_WORDS_PER_DEVO_SLIDE = 30;
 
   function splitIntoSentences(text) {
     const normalized = String(text || "").replace(/\s+/g, " ").trim();
@@ -2911,12 +2958,26 @@
     return (normalized.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || []).map((s) => s.trim()).filter(Boolean);
   }
 
+  function countWords(s) {
+    return (s.match(/\S+/g) || []).length;
+  }
+
   function splitDevotionalTextIntoSlides(text) {
     const sentences = splitIntoSentences(text);
     const slides = [];
-    for (let i = 0; i < sentences.length; i += MAX_SENTENCES_PER_DEVO_SLIDE) {
-      slides.push({ label: `Slide ${slides.length + 1}`, lines: sentences.slice(i, i + MAX_SENTENCES_PER_DEVO_SLIDE) });
+    let current = [];
+    let currentWords = 0;
+    for (const sentence of sentences) {
+      const words = countWords(sentence);
+      if (current.length && currentWords + words > MAX_WORDS_PER_DEVO_SLIDE) {
+        slides.push({ label: `Slide ${slides.length + 1}`, lines: current });
+        current = [];
+        currentWords = 0;
+      }
+      current.push(sentence);
+      currentWords += words;
     }
+    if (current.length) slides.push({ label: `Slide ${slides.length + 1}`, lines: current });
     return slides;
   }
 
