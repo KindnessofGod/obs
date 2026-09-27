@@ -1883,6 +1883,9 @@
 
   async function openSong(id, opts) {
     const silent = opts && opts.silent;
+    // Guards every path into a different song, not just the "Back" button -
+    // e.g. clicking a setlist row while mid-edit jumps straight here.
+    if (editingSlides && !confirmDiscardSongEdits()) return;
     try {
       const res = await fetch(`/api/songs/${encodeURIComponent(id)}`);
       if (!res.ok) return;
@@ -1908,7 +1911,10 @@
   }
 
   document.getElementById("backToSongsBtn").addEventListener("click", () => {
-    if (editingSlides) closeSongEditor();
+    if (editingSlides) {
+      if (!confirmDiscardSongEdits()) return;
+      closeSongEditor();
+    }
     songDetailEl.hidden = true;
     songListEl.hidden = false;
   });
@@ -2164,8 +2170,30 @@
     });
   }
 
+  // Leaving the editor (Cancel, or Back while still editing) used to discard
+  // whatever was typed with zero warning - the most likely explanation for
+  // "the app deleted my text": clicking one of these thinking it saves (or
+  // just to look at something else) silently threw the edits away. Now it
+  // only does that silently when nothing was actually changed; otherwise it
+  // confirms first, exactly like the "replace with pasted text" prompt above
+  // already does for a different kind of overwrite.
+  function songEditorHasUnsavedChanges() {
+    if (!editingSlides || !currentSong) return false;
+    syncEditingSlidesFromDom();
+    if (songEditTitleInput.value.trim() !== currentSong.title) return true;
+    const original = currentSong.slides.map((s) => ({ label: s.label, lines: s.lines }));
+    return JSON.stringify(editingSlides) !== JSON.stringify(original);
+  }
+
+  function confirmDiscardSongEdits() {
+    if (!songEditorHasUnsavedChanges()) return true;
+    return confirm("You have unsaved changes to this song. Discard them?");
+  }
+
   editSongBtn.addEventListener("click", openSongEditor);
-  cancelEditSongBtn.addEventListener("click", closeSongEditor);
+  cancelEditSongBtn.addEventListener("click", () => {
+    if (confirmDiscardSongEdits()) closeSongEditor();
+  });
 
   addSlideBtn.addEventListener("click", () => {
     syncEditingSlidesFromDom();
@@ -2212,13 +2240,15 @@
       songEditStatusEl.textContent = "Title can't be empty.";
       return;
     }
-    const slides = editingSlides
-      .map((s) => {
-        const lines = s.lines.map((l) => l.trim());
-        while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-        return { label: s.label.trim() || "Untitled", lines };
-      })
-      .filter((s) => s.lines.some((l) => l));
+    // Never silently drop a slide just because it's currently blank (e.g.
+    // one added but not yet filled in) - that's real content loss with no
+    // warning. The operator has an explicit "delete slide" button for
+    // anything they actually want removed; saving must never do it for them.
+    const slides = editingSlides.map((s) => {
+      const lines = s.lines.map((l) => l.trim());
+      while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+      return { label: s.label.trim() || "Untitled", lines };
+    });
     saveSongBtn.disabled = true;
     songEditStatusEl.textContent = "Saving…";
     try {
@@ -2728,6 +2758,8 @@
 
   async function openDevotional(id, opts) {
     const silent = opts && opts.silent;
+    // Guards every path into a different devotional, not just "Back".
+    if (editingDevoSlides && !confirmDiscardDevoEdits()) return;
     try {
       const res = await fetch(`/api/devotionals/${encodeURIComponent(id)}`);
       if (!res.ok) return;
@@ -2745,8 +2777,25 @@
     if (!silent && currentDevotional.slides.length > 0) selectDevoSlide(0);
   }
 
+  // Same reasoning as confirmDiscardSongEdits above.
+  function devoEditorHasUnsavedChanges() {
+    if (!editingDevoSlides || !currentDevotional) return false;
+    syncEditingDevoSlidesFromDom();
+    if (devoEditTitleInput.value.trim() !== currentDevotional.title) return true;
+    const original = currentDevotional.slides.map((s) => ({ label: s.label, lines: s.lines }));
+    return JSON.stringify(editingDevoSlides) !== JSON.stringify(original);
+  }
+
+  function confirmDiscardDevoEdits() {
+    if (!devoEditorHasUnsavedChanges()) return true;
+    return confirm("You have unsaved changes to this devotional. Discard them?");
+  }
+
   document.getElementById("backToDevotionalsBtn").addEventListener("click", () => {
-    if (editingDevoSlides) closeDevotionalEditor();
+    if (editingDevoSlides) {
+      if (!confirmDiscardDevoEdits()) return;
+      closeDevotionalEditor();
+    }
     devotionalDetailViewEl.hidden = true;
     devotionalsIndexViewEl.hidden = false;
   });
@@ -2929,7 +2978,9 @@
   });
 
   editDevotionalBtn.addEventListener("click", openDevotionalEditor);
-  cancelEditDevotionalBtn.addEventListener("click", closeDevotionalEditor);
+  cancelEditDevotionalBtn.addEventListener("click", () => {
+    if (confirmDiscardDevoEdits()) closeDevotionalEditor();
+  });
 
   addDevoSlideBtn.addEventListener("click", () => {
     syncEditingDevoSlidesFromDom();
@@ -3001,13 +3052,15 @@
       devoEditStatusEl.textContent = "Title can't be empty.";
       return;
     }
-    const slides = editingDevoSlides
-      .map((s) => {
-        const lines = s.lines.map((l) => l.trim());
-        while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-        return { label: s.label.trim() || "Untitled", lines };
-      })
-      .filter((s) => s.lines.some((l) => l));
+    // Never silently drop a slide just because it's currently blank (e.g.
+    // one added but not yet filled in) - that's real content loss with no
+    // warning. The operator has an explicit "delete slide" button for
+    // anything they actually want removed; saving must never do it for them.
+    const slides = editingDevoSlides.map((s) => {
+      const lines = s.lines.map((l) => l.trim());
+      while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+      return { label: s.label.trim() || "Untitled", lines };
+    });
     saveDevotionalBtn.disabled = true;
     devoEditStatusEl.textContent = "Saving…";
     try {
