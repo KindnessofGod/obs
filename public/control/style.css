@@ -593,6 +593,11 @@ input[type="text"]:focus, textarea:focus {
   cursor: default;
   font-style: italic;
 }
+.lyric-match-marker {
+  color: var(--accent);
+  font-weight: 700;
+  margin-left: 3px;
+}
 .add-to-setlist-btn {
   flex: none;
   font-size: 14px;
@@ -808,8 +813,27 @@ input[type="text"]:focus, textarea:focus {
 .btn-row {
   display: flex;
   gap: 6px;
+  align-items: center;
 }
 .btn-row button { flex: 1; }
+.devo-max-words-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.devo-max-words-row input {
+  width: 52px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
 .primary-btn {
   background: var(--accent-dim);
   border-color: var(--accent);

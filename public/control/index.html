@@ -203,6 +203,16 @@
           <label for="devotionalBgSelect">Background</label>
           <select id="devotionalBgSelect"></select>
         </div>
+        <div class="bg-picker">
+          <label for="devotionalSortSelect">Sort by</label>
+          <select id="devotionalSortSelect">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="recently-edited">Recently edited</option>
+            <option value="title-az">Title (A–Z)</option>
+            <option value="title-za">Title (Z–A)</option>
+          </select>
+        </div>
       </div>
       <div id="devotionalList" class="results-list scrollable-results"></div>
     </div>
@@ -228,11 +238,32 @@
           <span>Title</span>
           <input id="devoEditTitleInput" type="text" />
         </label>
+        <div class="bg-picker">
+          <label for="devoEditBgSelect">Background for this devotional</label>
+          <select id="devoEditBgSelect"></select>
+        </div>
+        <label class="song-edit-title-row">
+          <span>Date</span>
+          <input id="devoEditDateInput" type="text" placeholder="e.g. 16th September 2026" />
+        </label>
         <div class="song-edit-paste-row">
-          <label for="devoEditPasteText">Paste the full devotional, clean it up if needed, then click "Split into slides" (about 30 words per slide, never breaking mid-sentence)</label>
+          <label for="devoEditBibleTextInput">Bible text for the day</label>
+          <textarea id="devoEditBibleTextInput" rows="3" placeholder="e.g. John 3:16 — For God so loved the world…"></textarea>
+        </div>
+        <p class="preview-hint">
+          Date and Bible text each become their own slide automatically,
+          ahead of everything pasted/typed below - no need to type them into
+          the devotional text itself.
+        </p>
+        <div class="song-edit-paste-row">
+          <label for="devoEditPasteText">Paste the rest of the devotional, clean it up if needed, then click "Split into slides" (never breaks mid-sentence)</label>
           <textarea id="devoEditPasteText" rows="6" placeholder="Paste today's Rhapsody of Realities / Teevo text here…"></textarea>
           <div class="btn-row">
             <button id="splitDevoBtn" type="button">Split into slides</button>
+            <label class="devo-max-words-row">
+              <span>Words per slide</span>
+              <input id="devoMaxWordsInput" type="number" min="5" max="200" step="1" />
+            </label>
           </div>
         </div>
         <div id="devoEditSlides" class="song-edit-slides"></div>

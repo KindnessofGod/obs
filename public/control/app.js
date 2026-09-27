@@ -352,6 +352,10 @@
   }
 
   function withBackground(type, content) {
+    // A devotional saved with its own background (see devoContentForSlide)
+    // always wins over the shared per-type dropdown, so it doesn't have to
+    // be re-picked every time that devotional is opened.
+    if (content && content.background) return content;
     const bg = selectedBackgrounds[type];
     return bg ? { ...content, background: bg } : content;
   }
@@ -1812,9 +1816,22 @@
 
   function renderSongList(filter) {
     const q = (filter || "").trim().toLowerCase();
-    const matches = q
-      ? songsIndex.filter((s) => s.title.toLowerCase().includes(q) || (s.lyrics || "").includes(q))
-      : songsIndex;
+    let matches;
+    if (q) {
+      // Title matches rank first, lyric-only matches after - and get
+      // flagged so the row can mark them distinctly, so it's never
+      // ambiguous whether a result matched because of its title or because
+      // the query happens to appear somewhere in the lyrics.
+      const titleMatches = [];
+      const lyricMatches = [];
+      songsIndex.forEach((s) => {
+        if (s.title.toLowerCase().includes(q)) titleMatches.push(s);
+        else if ((s.lyrics || "").includes(q)) lyricMatches.push({ ...s, matchedByLyrics: true });
+      });
+      matches = titleMatches.concat(lyricMatches);
+    } else {
+      matches = songsIndex;
+    }
     songListEl.innerHTML = "";
     if (matches.length === 0) {
       const hint = document.createElement("div");
@@ -1830,6 +1847,13 @@
       titleBtn.type = "button";
       titleBtn.className = "song-item-title";
       titleBtn.textContent = s.title;
+      if (s.matchedByLyrics) {
+        const marker = document.createElement("span");
+        marker.className = "lyric-match-marker";
+        marker.textContent = "*";
+        marker.title = "Matched in the lyrics, not the title";
+        titleBtn.appendChild(marker);
+      }
       titleBtn.addEventListener("click", () => openSong(s.id));
       const inSetlist = currentSetlist ? currentSetlist.songIds.includes(s.id) : false;
       const addBtn = document.createElement("button");
@@ -2666,6 +2690,7 @@
   const devotionalsIndexViewEl = document.getElementById("devotionalsIndexView");
   const devotionalDetailViewEl = document.getElementById("devotionalDetailView");
   const devotionalSearchEl = document.getElementById("devotionalSearch");
+  const devotionalSortEl = document.getElementById("devotionalSortSelect");
   const devotionalListEl = document.getElementById("devotionalList");
   const devotionalDetailTitleEl = document.getElementById("devotionalDetailTitle");
   const devoSlideNavEl = document.getElementById("devoSlideNav");
@@ -2676,6 +2701,9 @@
   const editDevotionalBtn = document.getElementById("editDevotionalBtn");
   const devoEditPanelEl = document.getElementById("devoEditPanel");
   const devoEditTitleInput = document.getElementById("devoEditTitleInput");
+  const devoEditBgSelect = document.getElementById("devoEditBgSelect");
+  const devoEditDateInput = document.getElementById("devoEditDateInput");
+  const devoEditBibleTextInput = document.getElementById("devoEditBibleTextInput");
   const devoEditPasteTextEl = document.getElementById("devoEditPasteText");
   const splitDevoBtn = document.getElementById("splitDevoBtn");
   const devoEditSlidesEl = document.getElementById("devoEditSlides");
@@ -2693,7 +2721,11 @@
 
   function devoContentForSlide(devotional, slideIdx) {
     const slide = devotional.slides[slideIdx];
-    return { title: devotional.title, slideLabel: `${slideIdx + 1}/${devotional.slides.length}`, lines: slide.lines };
+    const content = { title: devotional.title, slideLabel: `${slideIdx + 1}/${devotional.slides.length}`, lines: slide.lines };
+    // Set once in the editor (see devoEditBgSelect) so the operator never has
+    // to re-pick it from the shared dropdown every time this one is opened.
+    if (devotional.background) content.background = devotional.background;
+    return content;
   }
 
   async function ensureDevotionalsLoaded() {
@@ -2708,9 +2740,33 @@
     }
   }
 
+  const DEVOTIONAL_SORTS = {
+    newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    oldest: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+    "recently-edited": (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt),
+    "title-az": (a, b) => a.title.localeCompare(b.title),
+    "title-za": (a, b) => b.title.localeCompare(a.title),
+  };
+
+  let devotionalSort = "newest";
+  try {
+    const saved = localStorage.getItem("obs-control:devotionalSort");
+    if (saved && DEVOTIONAL_SORTS[saved]) devotionalSort = saved;
+  } catch {
+    devotionalSort = "newest";
+  }
+  devotionalSortEl.value = devotionalSort;
+  devotionalSortEl.addEventListener("change", () => {
+    devotionalSort = devotionalSortEl.value;
+    localStorage.setItem("obs-control:devotionalSort", devotionalSort);
+    renderDevotionalList(devotionalSearchEl.value);
+  });
+
   function renderDevotionalList(filter) {
     const q = (filter || "").trim().toLowerCase();
-    const matches = q ? devotionalsIndex.filter((d) => d.title.toLowerCase().includes(q)) : devotionalsIndex;
+    const matches = (q ? devotionalsIndex.filter((d) => d.title.toLowerCase().includes(q)) : [...devotionalsIndex]).sort(
+      DEVOTIONAL_SORTS[devotionalSort] || DEVOTIONAL_SORTS.newest
+    );
     devotionalListEl.innerHTML = "";
     if (matches.length === 0) {
       const hint = document.createElement("div");
@@ -2782,7 +2838,11 @@
     if (!editingDevoSlides || !currentDevotional) return false;
     syncEditingDevoSlidesFromDom();
     if (devoEditTitleInput.value.trim() !== currentDevotional.title) return true;
-    const original = currentDevotional.slides.map((s) => ({ label: s.label, lines: s.lines }));
+    if ((devoEditBgSelect.value || null) !== (currentDevotional.background || null)) return true;
+    const originalFields = extractDevoLeadingFields(currentDevotional.slides);
+    if (devoEditDateInput.value !== originalFields.date) return true;
+    if (devoEditBibleTextInput.value !== originalFields.bibleText) return true;
+    const original = originalFields.rest.map((s) => ({ label: s.label, lines: s.lines }));
     return JSON.stringify(editingDevoSlides) !== JSON.stringify(original);
   }
 
@@ -2857,10 +2917,53 @@
 
   let editingDevoSlides = null; // [{ label, lines: string[] }, ...] while editing, else null
 
+  function renderDevoEditBgOptions() {
+    devoEditBgSelect.innerHTML = "";
+    const noneOpt = document.createElement("option");
+    noneOpt.value = "";
+    noneOpt.textContent = availableBackgrounds.length ? "Use the shared devotional background" : "No backgrounds found";
+    devoEditBgSelect.appendChild(noneOpt);
+    availableBackgrounds.forEach((filename) => {
+      const opt = document.createElement("option");
+      opt.value = filename;
+      opt.textContent = filename;
+      devoEditBgSelect.appendChild(opt);
+    });
+  }
+
+  // Date and Bible text get their own dedicated fields (not typed into the
+  // free-form paste box) but are still stored as ordinary slides - just
+  // marked with `kind` so they can be pulled back out into their own inputs
+  // next time the editor opens, instead of showing up in the regular slide
+  // list. Kept out of the server's schema entirely: isValidSlides only cares
+  // about label/lines, so the extra `kind` property round-trips for free.
+  function extractDevoLeadingFields(slides) {
+    const dateSlide = slides.find((s) => s.kind === "date");
+    const bibleSlide = slides.find((s) => s.kind === "bibleText");
+    const rest = slides.filter((s) => s.kind !== "date" && s.kind !== "bibleText").map((s) => ({ label: s.label, lines: [...s.lines] }));
+    return {
+      date: dateSlide ? dateSlide.lines.join("\n") : "",
+      bibleText: bibleSlide ? bibleSlide.lines.join("\n") : "",
+      rest,
+    };
+  }
+
+  function buildDevoSlidesForSave(dateText, bibleText, contentSlides) {
+    const leading = [];
+    if (dateText.trim()) leading.push({ label: "Date", lines: [dateText.trim()], kind: "date" });
+    if (bibleText.trim()) leading.push({ label: "Bible Text", lines: bibleText.split("\n").map((l) => l.trim()), kind: "bibleText" });
+    return leading.concat(contentSlides);
+  }
+
   function openDevotionalEditor() {
     if (!currentDevotional) return;
-    editingDevoSlides = currentDevotional.slides.map((s) => ({ label: s.label, lines: [...s.lines] }));
+    const { date, bibleText, rest } = extractDevoLeadingFields(currentDevotional.slides);
+    editingDevoSlides = rest;
     devoEditTitleInput.value = currentDevotional.title;
+    devoEditDateInput.value = date;
+    devoEditBibleTextInput.value = bibleText;
+    renderDevoEditBgOptions();
+    devoEditBgSelect.value = currentDevotional.background || "";
     devoEditPasteTextEl.value = "";
     devoEditStatusEl.textContent = "";
     renderDevoEditSlides();
@@ -2996,8 +3099,24 @@
   // never mid-sentence - same principle as every other slide-splitting
   // logic in this app (see splitLinesIntoParts above). Only runs when the
   // operator explicitly clicks "Split into slides" (not on paste itself),
-  // so there's room to clean up the pasted text first.
-  const MAX_WORDS_PER_DEVO_SLIDE = 30;
+  // so there's room to clean up the pasted text first. The word budget
+  // itself is operator-adjustable (see devoMaxWordsInput), not fixed.
+  const DEVO_MAX_WORDS_DEFAULT = 30;
+  const devoMaxWordsInput = document.getElementById("devoMaxWordsInput");
+  let devoMaxWordsPerSlide = DEVO_MAX_WORDS_DEFAULT;
+  try {
+    const saved = Number(localStorage.getItem("obs-control:devoMaxWordsPerSlide"));
+    if (Number.isFinite(saved) && saved >= 5) devoMaxWordsPerSlide = saved;
+  } catch {
+    devoMaxWordsPerSlide = DEVO_MAX_WORDS_DEFAULT;
+  }
+  devoMaxWordsInput.value = devoMaxWordsPerSlide;
+  devoMaxWordsInput.addEventListener("change", () => {
+    const next = Math.max(5, Math.round(Number(devoMaxWordsInput.value)) || DEVO_MAX_WORDS_DEFAULT);
+    devoMaxWordsPerSlide = next;
+    devoMaxWordsInput.value = next;
+    localStorage.setItem("obs-control:devoMaxWordsPerSlide", String(next));
+  });
 
   function splitIntoSentences(text) {
     const normalized = String(text || "").replace(/\s+/g, " ").trim();
@@ -3020,7 +3139,7 @@
     let currentWords = 0;
     for (const sentence of sentences) {
       const words = countWords(sentence);
-      if (current.length && currentWords + words > MAX_WORDS_PER_DEVO_SLIDE) {
+      if (current.length && currentWords + words > devoMaxWordsPerSlide) {
         slides.push({ label: `Slide ${slides.length + 1}`, lines: current });
         current = [];
         currentWords = 0;
@@ -3056,18 +3175,19 @@
     // one added but not yet filled in) - that's real content loss with no
     // warning. The operator has an explicit "delete slide" button for
     // anything they actually want removed; saving must never do it for them.
-    const slides = editingDevoSlides.map((s) => {
+    const contentSlides = editingDevoSlides.map((s) => {
       const lines = s.lines.map((l) => l.trim());
       while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
       return { label: s.label.trim() || "Untitled", lines };
     });
+    const slides = buildDevoSlidesForSave(devoEditDateInput.value, devoEditBibleTextInput.value, contentSlides);
     saveDevotionalBtn.disabled = true;
     devoEditStatusEl.textContent = "Saving…";
     try {
       const res = await fetch(`/api/devotionals/${encodeURIComponent(currentDevotional.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, slides }),
+        body: JSON.stringify({ title, slides, background: devoEditBgSelect.value || null }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "save failed");
       currentDevotional = await res.json();

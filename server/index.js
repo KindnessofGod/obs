@@ -207,8 +207,18 @@ function readDevotionalIndex() {
     .readdirSync(DEVOTIONALS_DIR)
     .filter((f) => f.endsWith(".json"))
     .map((f) => {
-      const d = JSON.parse(fs.readFileSync(path.join(DEVOTIONALS_DIR, f), "utf8"));
-      return { id: d.id, title: d.title };
+      const filePath = path.join(DEVOTIONALS_DIR, f);
+      const d = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      // Devotionals saved before createdAt/updatedAt existed fall back to
+      // the file's own timestamps, so "sort by newest" still has something
+      // sensible to sort by without needing a one-time migration write.
+      const stat = fs.statSync(filePath);
+      return {
+        id: d.id,
+        title: d.title,
+        createdAt: d.createdAt || stat.birthtime.toISOString(),
+        updatedAt: d.updatedAt || stat.mtime.toISOString(),
+      };
     });
 }
 
@@ -233,15 +243,19 @@ function loadExistingDevotionalIds() {
 }
 
 app.post("/api/devotionals", (req, res) => {
-  const { title, slides } = req.body || {};
+  const { title, slides, background } = req.body || {};
   if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "title is required" });
   const finalSlides = slides === undefined ? [{ label: "Slide 1", lines: [""] }] : slides;
   if (!isValidSlides(finalSlides)) {
     return res.status(400).json({ error: "slides must be an array of { label: string, lines: string[] }" });
   }
+  if (background !== undefined && typeof background !== "string") {
+    return res.status(400).json({ error: "background must be a string" });
+  }
   if (!fs.existsSync(DEVOTIONALS_DIR)) fs.mkdirSync(DEVOTIONALS_DIR, { recursive: true });
   const id = migration.uniqueId(migration.slugify(title), loadExistingDevotionalIds());
-  const devotional = { id, title: title.trim(), slides: finalSlides };
+  const now = new Date().toISOString();
+  const devotional = { id, title: title.trim(), slides: finalSlides, background: background || null, createdAt: now, updatedAt: now };
   fs.writeFileSync(devotionalFilePath(id), JSON.stringify(devotional, null, 2));
   res.status(201).json(devotional);
 });
@@ -257,12 +271,27 @@ app.put("/api/devotionals/:id", (req, res) => {
   const file = devotionalFilePath(req.params.id);
   if (!file) return res.status(400).json({ error: "invalid devotional id" });
   if (!fs.existsSync(file)) return res.status(404).json({ error: "devotional not found" });
-  const { title, slides } = req.body || {};
+  const { title, slides, background } = req.body || {};
   if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "title is required" });
   if (!isValidSlides(slides)) {
     return res.status(400).json({ error: "slides must be an array of { label: string, lines: string[] }" });
   }
-  const devotional = { id: req.params.id, title: title.trim(), slides };
+  if (background !== undefined && typeof background !== "string" && background !== null) {
+    return res.status(400).json({ error: "background must be a string or null" });
+  }
+  // Carry the original createdAt forward (falling back to the file's own
+  // birth time for a devotional saved before that field existed) so editing
+  // never bumps it to the top of a "newest created" sort.
+  const existing = JSON.parse(fs.readFileSync(file, "utf8"));
+  const createdAt = existing.createdAt || fs.statSync(file).birthtime.toISOString();
+  const devotional = {
+    id: req.params.id,
+    title: title.trim(),
+    slides,
+    background: background || null,
+    createdAt,
+    updatedAt: new Date().toISOString(),
+  };
   fs.writeFileSync(file, JSON.stringify(devotional, null, 2));
   res.json(devotional);
 });
