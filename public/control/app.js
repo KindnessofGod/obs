@@ -1855,7 +1855,7 @@
         titleBtn.appendChild(marker);
       }
       titleBtn.addEventListener("click", () => openSong(s.id));
-      const inSetlist = currentSetlist ? currentSetlist.songIds.includes(s.id) : false;
+      const inSetlist = isInSetlist("song", s.id);
       const addBtn = document.createElement("button");
       addBtn.type = "button";
       addBtn.className = "add-to-setlist-btn";
@@ -1868,7 +1868,7 @@
       addBtn.disabled = inSetlist;
       addBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        addToSetlist(s.id);
+        addToSetlist("song", s.id);
       });
       item.appendChild(titleBtn);
       item.appendChild(addBtn);
@@ -2344,7 +2344,7 @@
   const setlistListEl = document.getElementById("setlistList");
 
   let setlistsIndex = []; // [{ id, name, count }, ...]
-  let currentSetlist = null; // full { id, name, songIds } of whichever one is open, or null
+  let currentSetlist = null; // full { id, name, items: [{type:"song"|"devotional", id}] } of whichever one is open, or null
   let currentSetlistId = null;
   try {
     currentSetlistId = localStorage.getItem("obs-control:currentSetlistId");
@@ -2376,7 +2376,7 @@
       const titleBtn = document.createElement("button");
       titleBtn.type = "button";
       titleBtn.className = "song-item-title";
-      titleBtn.textContent = `${s.name} (${s.count} song${s.count === 1 ? "" : "s"})`;
+      titleBtn.textContent = `${s.name} (${s.count} item${s.count === 1 ? "" : "s"})`;
       titleBtn.addEventListener("click", () => openSetlist(s.id));
       row.appendChild(titleBtn);
       setlistsIndexListEl.appendChild(row);
@@ -2406,6 +2406,7 @@
     setlistDetailViewEl.hidden = false;
     renderSetlistDetail();
     renderSongList(songSearchEl.value); // +/✓ indicators now reflect this setlist
+    renderDevotionalList(devotionalSearchEl.value);
   }
 
   function backToSetlistsIndex() {
@@ -2420,7 +2421,7 @@
       const res = await fetch(`/api/setlists/${encodeURIComponent(currentSetlist.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: currentSetlist.name, songIds: currentSetlist.songIds }),
+        body: JSON.stringify({ name: currentSetlist.name, items: currentSetlist.items }),
       });
       if (res.ok) currentSetlist = await res.json();
     } catch {
@@ -2429,28 +2430,44 @@
     }
   }
 
+  // A setlist item is resolved against whichever index matches its type -
+  // songsIndex for "song", devotionalsIndex for "devotional" - so the
+  // detail list can show a real title (or flag a since-deleted entry)
+  // without needing its own separate lookup.
+  function resolveSetlistItem(item) {
+    const index = item.type === "devotional" ? devotionalsIndex : songsIndex;
+    return index.find((x) => x.id === item.id) || null;
+  }
+
   function renderSetlistDetail() {
     setlistListEl.innerHTML = "";
-    const songIds = currentSetlist ? currentSetlist.songIds : [];
-    if (songIds.length === 0) {
+    const items = currentSetlist ? currentSetlist.items : [];
+    if (items.length === 0) {
       const hint = document.createElement("div");
       hint.className = "empty-hint";
-      hint.textContent = "Nothing added yet — use the + button next to a song in the Songs tab.";
+      hint.textContent = "Nothing added yet — use the + button next to a song or devotional.";
       setlistListEl.appendChild(hint);
       return;
     }
-    songIds.forEach((id, idx) => {
-      const song = songsIndex.find((s) => s.id === id);
+    items.forEach((item, idx) => {
+      const resolved = resolveSetlistItem(item);
       const row = document.createElement("div");
       row.className = "result-item setlist-item";
       const titleBtn = document.createElement("button");
       titleBtn.type = "button";
       titleBtn.className = "song-item-title";
-      titleBtn.textContent = `${idx + 1}. ${song ? song.title : "(missing song)"}`;
-      titleBtn.disabled = !song;
+      const kindLabel = item.type === "devotional" ? "Devotional" : "Song";
+      titleBtn.textContent = `${idx + 1}. ${resolved ? resolved.title : `(missing ${kindLabel.toLowerCase()})`}`;
+      titleBtn.title = kindLabel;
+      titleBtn.disabled = !resolved;
       titleBtn.addEventListener("click", () => {
-        switchTab("songs");
-        openSong(id);
+        if (item.type === "devotional") {
+          switchTab("devotional");
+          openDevotional(item.id);
+        } else {
+          switchTab("songs");
+          openSong(item.id);
+        }
       });
       const actions = document.createElement("div");
       actions.className = "setlist-item-actions";
@@ -2467,7 +2484,7 @@
       downBtn.type = "button";
       downBtn.title = "Move down";
       downBtn.textContent = "▼";
-      downBtn.disabled = idx === songIds.length - 1;
+      downBtn.disabled = idx === items.length - 1;
       downBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         moveInSetlist(idx, 1);
@@ -2478,7 +2495,7 @@
       removeBtn.textContent = "✕";
       removeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        removeFromSetlist(id);
+        removeFromSetlist(item.type, item.id);
       });
       actions.appendChild(upBtn);
       actions.appendChild(downBtn);
@@ -2489,41 +2506,47 @@
     });
   }
 
-  // Keeps the "(N songs)" count on the setlists-index row in sync after
-  // adding/removing a song, without a full reload from the server.
+  // Keeps the "(N items)" count on the setlists-index row in sync after
+  // adding/removing an item, without a full reload from the server.
   function refreshSetlistsIndexCount() {
     if (!currentSetlist) return;
     const entry = setlistsIndex.find((s) => s.id === currentSetlist.id);
-    if (entry) entry.count = currentSetlist.songIds.length;
+    if (entry) entry.count = currentSetlist.items.length;
   }
 
-  async function addToSetlist(id) {
+  function isInSetlist(type, id) {
+    return !!currentSetlist && currentSetlist.items.some((it) => it.type === type && it.id === id);
+  }
+
+  async function addToSetlist(type, id) {
     if (!currentSetlist) {
-      alert("Open or create a setlist first (Setlist tab), then add songs to it.");
+      alert("Open or create a setlist first (Setlist tab), then add songs/devotionals to it.");
       return;
     }
-    if (currentSetlist.songIds.includes(id)) return;
-    currentSetlist.songIds.push(id);
+    if (isInSetlist(type, id)) return;
+    currentSetlist.items.push({ type, id });
     await saveCurrentSetlist();
     renderSetlistDetail();
     renderSongList(songSearchEl.value);
+    renderDevotionalList(devotionalSearchEl.value);
     refreshSetlistsIndexCount();
   }
 
-  async function removeFromSetlist(id) {
+  async function removeFromSetlist(type, id) {
     if (!currentSetlist) return;
-    currentSetlist.songIds = currentSetlist.songIds.filter((sid) => sid !== id);
+    currentSetlist.items = currentSetlist.items.filter((it) => !(it.type === type && it.id === id));
     await saveCurrentSetlist();
     renderSetlistDetail();
     renderSongList(songSearchEl.value);
+    renderDevotionalList(devotionalSearchEl.value);
     refreshSetlistsIndexCount();
   }
 
   async function moveInSetlist(idx, delta) {
     if (!currentSetlist) return;
     const target = idx + delta;
-    if (target < 0 || target >= currentSetlist.songIds.length) return;
-    [currentSetlist.songIds[idx], currentSetlist.songIds[target]] = [currentSetlist.songIds[target], currentSetlist.songIds[idx]];
+    if (target < 0 || target >= currentSetlist.items.length) return;
+    [currentSetlist.items[idx], currentSetlist.items[target]] = [currentSetlist.items[target], currentSetlist.items[idx]];
     await saveCurrentSetlist();
     renderSetlistDetail();
   }
@@ -2776,11 +2799,30 @@
       return;
     }
     matches.forEach((d) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "result-item";
-      item.textContent = d.title;
-      item.addEventListener("click", () => openDevotional(d.id));
+      const item = document.createElement("div");
+      item.className = "result-item song-item";
+      const titleBtn = document.createElement("button");
+      titleBtn.type = "button";
+      titleBtn.className = "song-item-title";
+      titleBtn.textContent = d.title;
+      titleBtn.addEventListener("click", () => openDevotional(d.id));
+      const inSetlist = isInSetlist("devotional", d.id);
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "add-to-setlist-btn";
+      addBtn.title = inSetlist
+        ? "Already in setlist"
+        : currentSetlist
+          ? `Add to "${currentSetlist.name}"`
+          : "Open or create a setlist first (Setlist tab)";
+      addBtn.textContent = inSetlist ? "✓" : "+";
+      addBtn.disabled = inSetlist;
+      addBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        addToSetlist("devotional", d.id);
+      });
+      item.appendChild(titleBtn);
+      item.appendChild(addBtn);
       devotionalListEl.appendChild(item);
     });
   }

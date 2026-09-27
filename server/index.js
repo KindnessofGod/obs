@@ -305,10 +305,10 @@ app.delete("/api/devotionals/:id", (req, res) => {
 });
 
 // ---- Setlists ----
-// Named, saved agendas - each an ordered list of song ids - so the operator
-// can prepare several ahead of time (e.g. one per service) and just open the
-// right one on the day instead of rebuilding a list live or overwriting
-// whatever was there before.
+// Named, saved agendas - each an ordered list of items (songs and/or
+// devotionals) - so the operator can prepare several ahead of time (e.g. one
+// per service) and just open the right one on the day instead of rebuilding
+// a list live or overwriting whatever was there before.
 
 function setlistFilePath(id) {
   const file = path.join(SETLISTS_DIR, `${id}.json`);
@@ -325,6 +325,23 @@ function loadExistingSetlistIds() {
   );
 }
 
+// Setlists originally only ever held songs, as a flat songIds array. Reading
+// (rather than migrating files on disk) into { type: "song", id } items
+// keeps every setlist saved before devotionals could be added working
+// without a one-time rewrite - the next save naturally persists it as
+// `items` instead, replacing `songIds` for that file from then on.
+function setlistItems(raw) {
+  if (Array.isArray(raw.items)) {
+    return raw.items.filter(
+      (it) => it && typeof it === "object" && (it.type === "song" || it.type === "devotional") && typeof it.id === "string"
+    );
+  }
+  if (Array.isArray(raw.songIds)) {
+    return raw.songIds.filter((id) => typeof id === "string").map((id) => ({ type: "song", id }));
+  }
+  return [];
+}
+
 function readSetlistIndex() {
   if (!fs.existsSync(SETLISTS_DIR)) return [];
   return fs
@@ -332,8 +349,17 @@ function readSetlistIndex() {
     .filter((f) => f.endsWith(".json"))
     .map((f) => {
       const s = JSON.parse(fs.readFileSync(path.join(SETLISTS_DIR, f), "utf8"));
-      return { id: s.id, name: s.name, count: Array.isArray(s.songIds) ? s.songIds.length : 0 };
+      return { id: s.id, name: s.name, count: setlistItems(s).length };
     });
+}
+
+// Drops any item that no longer resolves to a real song/devotional (e.g.
+// deleted via its own editor since being added to this setlist), so a
+// setlist can't silently accumulate dead entries.
+function cleanSetlistItems(items) {
+  const existingSongIds = migration.loadExistingSongIds();
+  const existingDevotionalIds = loadExistingDevotionalIds();
+  return items.filter((it) => (it.type === "devotional" ? existingDevotionalIds.has(it.id) : existingSongIds.has(it.id)));
 }
 
 // One-time upgrade path: this app used to keep exactly one unnamed,
@@ -359,18 +385,33 @@ app.get("/api/setlists", (req, res) => {
   res.json(readSetlistIndex());
 });
 
+// Accepts either the new `items` shape ([{ type: "song"|"devotional", id }])
+// or the legacy `songIds` (all treated as type "song"), for one fewer thing
+// any future caller has to remember.
+function itemsFromBody(body) {
+  if (Array.isArray(body.items)) return body.items;
+  if (Array.isArray(body.songIds)) return body.songIds.map((id) => ({ type: "song", id }));
+  return [];
+}
+
+function isValidSetlistItems(items) {
+  return (
+    Array.isArray(items) &&
+    items.every((it) => it && typeof it === "object" && (it.type === "song" || it.type === "devotional") && typeof it.id === "string")
+  );
+}
+
 app.post("/api/setlists", (req, res) => {
-  const { name, songIds } = req.body || {};
+  const { name } = req.body || {};
   if (typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "name is required" });
-  const finalSongIds = songIds === undefined ? [] : songIds;
-  if (!Array.isArray(finalSongIds) || !finalSongIds.every((id) => typeof id === "string")) {
-    return res.status(400).json({ error: "songIds must be an array of strings" });
+  const items = itemsFromBody(req.body || {});
+  if (!isValidSetlistItems(items)) {
+    return res.status(400).json({ error: 'items must be an array of { type: "song"|"devotional", id: string }' });
   }
-  const existingSongIds = migration.loadExistingSongIds();
-  const cleaned = finalSongIds.filter((id) => existingSongIds.has(id));
+  const cleaned = cleanSetlistItems(items);
   if (!fs.existsSync(SETLISTS_DIR)) fs.mkdirSync(SETLISTS_DIR, { recursive: true });
   const id = migration.uniqueId(migration.slugify(name), loadExistingSetlistIds());
-  const setlist = { id, name: name.trim(), songIds: cleaned };
+  const setlist = { id, name: name.trim(), items: cleaned };
   fs.writeFileSync(setlistFilePath(id), JSON.stringify(setlist, null, 2));
   res.status(201).json(setlist);
 });
@@ -379,24 +420,25 @@ app.get("/api/setlists/:id", (req, res) => {
   const file = setlistFilePath(req.params.id);
   if (!file) return res.status(400).json({ error: "invalid setlist id" });
   if (!fs.existsSync(file)) return res.status(404).json({ error: "setlist not found" });
-  res.json(JSON.parse(fs.readFileSync(file, "utf8")));
+  const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  res.json({ id: raw.id, name: raw.name, items: setlistItems(raw) });
 });
 
 app.put("/api/setlists/:id", (req, res) => {
   const file = setlistFilePath(req.params.id);
   if (!file) return res.status(400).json({ error: "invalid setlist id" });
   if (!fs.existsSync(file)) return res.status(404).json({ error: "setlist not found" });
-  const { name, songIds } = req.body || {};
+  const { name } = req.body || {};
   if (typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "name is required" });
-  if (!Array.isArray(songIds) || !songIds.every((id) => typeof id === "string")) {
-    return res.status(400).json({ error: "songIds must be an array of strings" });
+  const items = itemsFromBody(req.body || {});
+  if (!isValidSetlistItems(items)) {
+    return res.status(400).json({ error: 'items must be an array of { type: "song"|"devotional", id: string }' });
   }
-  // Drop any id that no longer resolves to a real song (e.g. deleted via the
-  // song editor since being added to this setlist), so it can't silently
-  // accumulate dead entries.
-  const existingSongIds = migration.loadExistingSongIds();
-  const cleaned = songIds.filter((id) => existingSongIds.has(id));
-  const setlist = { id: req.params.id, name: name.trim(), songIds: cleaned };
+  const cleaned = cleanSetlistItems(items);
+  // Writing `items` here is what completes the migration for a setlist that
+  // was still stored as the legacy `songIds` shape - the next read of this
+  // file no longer needs the fallback in setlistItems().
+  const setlist = { id: req.params.id, name: name.trim(), items: cleaned };
   fs.writeFileSync(file, JSON.stringify(setlist, null, 2));
   res.json(setlist);
 });
