@@ -1679,6 +1679,18 @@
       const content = scriptureContentForPart(currentScripture, parts, 0);
       currentScriptureIsLive = stageOrGoLive("scripture", content, scriptureAutoLive);
       renderScriptureNav(content);
+
+      // Load the whole chapter into the results list too (not just the one
+      // bookmarked verse), so the operator can see it in context and step to
+      // nearby verses without searching again. currentScripture is already
+      // set to the bookmarked verse above, so renderScriptureResults's
+      // existing highlightCurrentScriptureResult() call marks and scrolls to
+      // it automatically - no separate "highlight" logic needed.
+      const chapterQuery = `${b.book} ${b.chapter}`;
+      scriptureSearchEl.value = chapterQuery;
+      const { results } = await searchScripture(chapterQuery, result.translation);
+      lastScriptureResults = results;
+      renderScriptureResults(results);
     } catch {
       // network hiccup; leave whatever's staged/live untouched
     }
